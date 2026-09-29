@@ -2,7 +2,9 @@
 
 Local-first CLI for job import, evidence-grounded profiles and evaluations, reviewed CV PDF export, and local application drafts.
 
-> 📖 **Dành cho người dùng & lập trình viên mới:** Hãy đọc [docs/architecture_and_operations.md](docs/architecture_and_operations.md) để hiểu cấu trúc kiến trúc, quy trình vận hành chi tiết 5 bước và cách tích hợp với AI Agent.
+> 📖 **Architecture & Operations Guides:**
+> - [Tiếng Việt: docs/architecture_and_operations_vi.md](docs/architecture_and_operations_vi.md)
+> - [English: docs/architecture_and_operations_en.md](docs/architecture_and_operations_en.md)
 
 ## Naming and existing workspaces
 
