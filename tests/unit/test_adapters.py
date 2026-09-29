@@ -4,6 +4,8 @@ import pytest
 
 from mocnghe.ingestion.adapters.generic import GenericAdapter
 from mocnghe.ingestion.adapters.greenhouse import GreenhouseAdapter
+from mocnghe.ingestion.adapters.indeed import IndeedAdapter
+from mocnghe.ingestion.adapters.itviec import ITviecAdapter
 from mocnghe.ingestion.adapters.registry import find_adapter
 
 SAMPLE_GREENHOUSE_HTML = """
@@ -35,6 +37,59 @@ SAMPLE_GREENHOUSE_HTML = """
 </html>
 """
 
+SAMPLE_ITVIEC_HTML = """
+<!DOCTYPE html>
+<html>
+<body>
+    <div class="job-details">
+        <h1>Senior Backend Engineer (Python / Go)</h1>
+        <a href="/companies/vietnam-tech-corp" class="employer-name">Vietnam Tech Corp</a>
+        <div class="location">Hà Nội</div>
+        <h2>Job description</h2>
+        <p>Develop high scale distributed systems.</p>
+        <h2>Your skills and experience</h2>
+        <ul>
+            <li>3+ years Python experience</li>
+            <li>Experience with PostgreSQL</li>
+        </ul>
+        <h2>Why you'll love working here</h2>
+        <p>13th month salary, MacBooks provided.</p>
+    </div>
+</body>
+</html>
+"""
+
+SAMPLE_INDEED_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "JobPosting",
+        "title": "Full Stack Developer",
+        "hiringOrganization": {
+            "@type": "Organization",
+            "name": "Global Software Ltd"
+        },
+        "jobLocation": {
+            "@type": "Place",
+            "address": {
+                "@type": "PostalAddress",
+                "addressLocality": "Singapore",
+                "addressCountry": "SG"
+            }
+        },
+        "description": "<p>We are seeking a Full Stack Developer with React and Node.js skills.</p>"
+    }
+    </script>
+</head>
+<body>
+    <h1 class="jobsearch-JobInfoHeader-title">Full Stack Developer</h1>
+</body>
+</html>
+"""
+
 
 def test_greenhouse_adapter_matches_domains():
     adapter = GreenhouseAdapter()
@@ -54,6 +109,34 @@ def test_greenhouse_adapter_parses_html():
     assert "Current Computer Science student" in job.requirements or "Current Computer Science student" in job.freeform_text
     assert str(job.source.original_url) == url
     assert job.source.source_kind == "greenhouse"
+
+
+def test_itviec_adapter():
+    adapter = ITviecAdapter()
+    url = "https://itviec.com/it-jobs/senior-backend-engineer-vietnam-tech-corp"
+    assert adapter.supports_url(url)
+    assert not adapter.supports_url("https://indeed.com/viewjob?jk=123")
+
+    job = adapter.parse_job(SAMPLE_ITVIEC_HTML, url=url)
+    assert "Backend Engineer" in job.title
+    assert "Vietnam Tech Corp" in job.employer
+    assert "Hà Nội" in job.location
+    assert "Python" in job.requirements
+    assert job.source.source_kind == "itviec"
+
+
+def test_indeed_adapter_with_jsonld():
+    adapter = IndeedAdapter()
+    url = "https://www.indeed.com/viewjob?jk=abcdef123456"
+    assert adapter.supports_url(url)
+    assert not adapter.supports_url("https://itviec.com")
+
+    job = adapter.parse_job(SAMPLE_INDEED_HTML, url=url)
+    assert job.title == "Full Stack Developer"
+    assert job.employer == "Global Software Ltd"
+    assert "Singapore" in job.location
+    assert "React" in job.description or "React" in job.freeform_text
+    assert job.source.source_kind == "indeed"
 
 
 def test_generic_adapter_fallback():
@@ -77,6 +160,12 @@ def test_generic_adapter_fallback():
 def test_registry_finds_specific_adapter_then_generic():
     gh_adapter = find_adapter("https://job-boards.eu.greenhouse.io/test/jobs/123")
     assert isinstance(gh_adapter, GreenhouseAdapter)
+
+    it_adapter = find_adapter("https://itviec.com/it-jobs/ruby-dev")
+    assert isinstance(it_adapter, ITviecAdapter)
+
+    in_adapter = find_adapter("https://vn.indeed.com/viewjob?jk=987654")
+    assert isinstance(in_adapter, IndeedAdapter)
 
     gen_adapter = find_adapter("https://unknown-startup.io/careers/456")
     assert isinstance(gen_adapter, GenericAdapter)

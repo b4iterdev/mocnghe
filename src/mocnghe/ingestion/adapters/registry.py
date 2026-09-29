@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 from .base import BaseJobAdapter
 from .generic import GenericAdapter
 from .greenhouse import GreenhouseAdapter
+from .indeed import IndeedAdapter
+from .itviec import ITviecAdapter
 
 if TYPE_CHECKING:
     from ...models.job import Job
@@ -12,6 +14,8 @@ if TYPE_CHECKING:
 # Registered adapters in precedence order (specialized adapters first, fallback last)
 _ADAPTERS: list[BaseJobAdapter] = [
     GreenhouseAdapter(),
+    ITviecAdapter(),
+    IndeedAdapter(),
 ]
 _FALLBACK_ADAPTER = GenericAdapter()
 
