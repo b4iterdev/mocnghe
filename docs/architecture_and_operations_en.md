@@ -52,6 +52,8 @@ This document is crafted for humans (developers, job seekers, and admins) to cle
 
 ### 📚 Deep-Dive Technical References
 To inspect source-level implementations and runtime lifecycles across each subsystem:
+- 🖥️ [User & AI Agent Surface](internals/surface_en.md) — Typer CLI architecture, Agent Skills dispatch layer, Slash Commands, and prompt injection guardrails.
+- 💾 [Local Database & Storage](internals/storage_en.md) — SQLite schema relational layout, backward compatibility, read-time SHA-256 tamper checks, and diagnostics.
 - 🌐 [Ingestion & Web Crawlers](internals/ingestion_en.md) — Site adapters, headless Playwright runner, and content deduplication.
 - 👤 [Profile & Grounded Evidence](internals/profile_en.md) — Atomic evidence model, profile immutability, and fact requirement gates.
 - 🎯 [Triage & Evaluation](internals/evaluation_en.md) — Heading/bullet extractor, offline screening, and PII-stripped evaluation packets.
