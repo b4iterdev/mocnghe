@@ -53,6 +53,8 @@ This document is crafted for humans (developers, job seekers, and admins) to cle
 ### 📚 Deep-Dive Technical References
 To inspect source-level implementations and runtime lifecycles across each subsystem:
 - 📑 [CV Processing Lifecycle](cv_processing_lifecycle_en.md) — 6-step breakdown from raw CV upload to publication PDF.
+- 🌐 [Job Ingestion Lifecycle](job_crawling_lifecycle_en.md) — Adapter selection, dynamic rendering, and deduplication mechanics.
+- 🎯 [Application Tracking Lifecycle](application_tracking_lifecycle_en.md) — Offline triage, form mapping, and audited application state transitions.
 - 🖥️ [User & AI Agent Surface](internals/surface_en.md) — Typer CLI architecture, Agent Skills dispatch layer, Slash Commands, and prompt injection guardrails.
 - 💾 [Local Database & Storage](internals/storage_en.md) — SQLite schema relational layout, backward compatibility, read-time SHA-256 tamper checks, and diagnostics.
 - 🌐 [Ingestion & Web Crawlers](internals/ingestion_en.md) — Site adapters, headless Playwright runner, and content deduplication.

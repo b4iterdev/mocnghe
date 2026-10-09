@@ -5,8 +5,11 @@ Local-first CLI for job import, evidence-grounded profiles and evaluations, revi
 > 📖 **Architecture & Operations Guides:**
 > - [Tiếng Việt: docs/architecture_and_operations_vi.md](docs/architecture_and_operations_vi.md)
 > - [English: docs/architecture_and_operations_en.md](docs/architecture_and_operations_en.md)
-> - [Luồng xử lý CV (Tiếng Việt): docs/cv_processing_lifecycle_vi.md](docs/cv_processing_lifecycle_vi.md)
-> - [CV Processing Lifecycle (English): docs/cv_processing_lifecycle_en.md](docs/cv_processing_lifecycle_en.md)
+> 
+> 🔄 **Tài Liệu Chi Tiết Từng Luồng Nghiệp Vụ (Lifecycle Walkthroughs):**
+> - **Xử lý CV (CV Processing):** [Tiếng Việt](docs/cv_processing_lifecycle_vi.md) | [English](docs/cv_processing_lifecycle_en.md)
+> - **Thu thập JD (Job Crawling):** [Tiếng Việt](docs/job_crawling_lifecycle_vi.md) | [English](docs/job_crawling_lifecycle_en.md)
+> - **Ứng tuyển & Tracking (Application Lifecycle):** [Tiếng Việt](docs/application_tracking_lifecycle_vi.md) | [English](docs/application_tracking_lifecycle_en.md)
 
 ## Naming and existing workspaces
 
