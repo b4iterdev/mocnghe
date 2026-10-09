@@ -52,6 +52,7 @@ Tài liệu này được thiết kế để con người (lập trình viên, n
 
 ### 📚 Tài liệu Giải thích Chuyên sâu Từng Phân hệ (Deep-dive Modules)
 Để tìm hiểu sâu về mã nguồn và cách vận hành kỹ thuật chi tiết của từng bộ phận:
+- 📑 [Luồng Xử lý Hồ sơ CV Chi tiết (Lifecycle)](cv_processing_lifecycle_vi.md) — Chi tiết 6 bước từ khi tải tệp CV lên đến khi xuất PDF hoàn chỉnh.
 - 🖥️ [User & AI Agent Surface](internals/surface_vi.md) — Kiến trúc Typer CLI, lớp điều phối Agent Skills, Slash Commands và hàng rào an toàn chống prompt injection.
 - 💾 [Local Database & Storage](internals/storage_vi.md) — Lược đồ quan hệ SQLite, tính tương thích ngược, kiểm tra băm SHA-256 chống giả mạo và chẩn đoán integrity.
 - 🌐 [Ingestion & Web Crawlers](internals/ingestion_vi.md) — Cơ chế hoạt động của Adapter, headless Playwright và băm định danh.
