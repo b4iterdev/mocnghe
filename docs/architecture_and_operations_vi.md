@@ -50,6 +50,14 @@ Tài liệu này được thiết kế để con người (lập trình viên, n
                                             +-------------------------------+
 ```
 
+### 📚 Tài liệu Giải thích Chuyên sâu Từng Phân hệ (Deep-dive Modules)
+Để tìm hiểu sâu về mã nguồn và cách vận hành kỹ thuật chi tiết của từng bộ phận:
+- 🌐 [Ingestion & Web Crawlers](internals/ingestion_vi.md) — Cơ chế hoạt động của Adapter, headless Playwright và băm định danh.
+- 👤 [Profile & Grounded Evidence](internals/profile_vi.md) — Mô hình bằng chứng nguyên tử, tính bất biến và xác thực sự thật.
+- 🎯 [Triage & Evaluation](internals/evaluation_vi.md) — Trích xuất gạch đầu dòng tự động, screening offline và giao thức AI Agent an toàn.
+- 📄 [CV Tailoring & PDF Render](internals/cv_render_vi.md) — Quản lý Claims, cổng phê duyệt chống giả mạo và ReportLab engine.
+- 📊 [Application Tracking](internals/tracking_vi.md) — State machine tuyến tính, ảnh chụp snapshot bất biến và bảo vệ human-in-the-loop.
+
 ---
 
 ## 3. Quy trình Vận hành Chuẩn (End-to-End Workflow)

@@ -50,6 +50,14 @@ This document is crafted for humans (developers, job seekers, and admins) to cle
                                             +-------------------------------+
 ```
 
+### 📚 Deep-Dive Technical References
+To inspect source-level implementations and runtime lifecycles across each subsystem:
+- 🌐 [Ingestion & Web Crawlers](internals/ingestion_en.md) — Site adapters, headless Playwright runner, and content deduplication.
+- 👤 [Profile & Grounded Evidence](internals/profile_en.md) — Atomic evidence model, profile immutability, and fact requirement gates.
+- 🎯 [Triage & Evaluation](internals/evaluation_en.md) — Heading/bullet extractor, offline screening, and PII-stripped evaluation packets.
+- 📄 [CV Tailoring & PDF Render](internals/cv_render_en.md) — Structured claims, cryptographic approval gates, and ReportLab canvas limits.
+- 📊 [Application Tracking](internals/tracking_en.md) — Unidirectional state machine, submission audit snapshots, and human-in-the-loop apply gates.
+
 ---
 
 ## 3. Standard End-to-End Workflow
