@@ -98,9 +98,28 @@ def approve(ctx: typer.Context, cv_id: str,
 @cv_app.command("export")
 @guarded
 def export(ctx: typer.Context, cv_id: str, output: Annotated[Path, typer.Option()],
+           engine: Annotated[str, typer.Option(help="Rendering engine: modern or reportlab")] = "modern",
            max_pages: Annotated[int, typer.Option(min=1, max=10)] = 2):
-    export_cv(service(ctx), cv_id, output, max_pages=max_pages)
+    export_cv(service(ctx), cv_id, output, engine=engine, max_pages=max_pages)
     typer.echo(f"Exported CV bundle: {output}")
+
+
+@cv_app.command("verify-visual")
+@guarded
+def verify_visual(ctx: typer.Context, cv_id: str,
+                  snapshot: Annotated[Path, typer.Option(help="Path to snapshot image (.png)")],
+                  update: Annotated[bool, typer.Option(help="Update baseline snapshot")] = False,
+                  tolerance: Annotated[float, typer.Option(help="Tolerance threshold (default 0.01)")] = 0.01):
+    """Verify rendered CV visually against baseline snapshot."""
+    s = service(ctx)
+    from .cv_render import render_pdf
+    from .cv_visual import verify_pdf_visual
+    cv = s.get(cv_id)
+    pdf = render_pdf(cv)
+    res = verify_pdf_visual(pdf, snapshot, tolerance=tolerance, update=update)
+    typer.echo(json.dumps(res, indent=2))
+    if not res["passed"]:
+        raise typer.Exit(1)
 
 
 @cv_app.command("export-packet")

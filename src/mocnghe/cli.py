@@ -6,6 +6,7 @@ from typing import Annotated, cast
 import typer
 from pydantic import ValidationError
 
+from .cover_letter_cli import cover_letter_app
 from .cv_cli import cv_app, draft_app
 from .ingestion.itviec import fixture_client_for_itviec, search_itviec
 from .ingestion.manual import import_jd_file_with_status, import_jd_text_with_status
@@ -25,6 +26,7 @@ app.add_typer(profile_app, name="profile")
 app.add_typer(evaluate_app, name="evaluate")
 app.add_typer(cv_app, name="cv")
 app.add_typer(draft_app, name="draft")
+app.add_typer(cover_letter_app, name="cover-letter")
 app.add_typer(applications_app, name="applications")
 app.command("track")(track)
 app.command("apply")(apply)
@@ -221,6 +223,41 @@ def jobs_crawl(
     )
     status = "imported" if created else "existing"
     typer.echo(f"{status} {job.job_id} {job.title}")
+
+
+@jobs_app.command("batch-crawl")
+def jobs_batch_crawl(
+    ctx: typer.Context,
+    file: Annotated[Path | None, typer.Option("--file", exists=True, dir_okay=False, help="Text file with URLs")] = None,
+    urls: Annotated[list[str] | None, typer.Option("--url", help="Target URL (repeatable)")] = None,
+    browser: Annotated[bool, typer.Option("--browser", help="Use headless browser for dynamic pages")] = False,
+    delay: Annotated[float, typer.Option("--delay", help="Polite delay between requests in seconds")] = 0.5,
+    output: Annotated[Path | None, typer.Option("--output", help="Optional path to write JSON summary")] = None,
+) -> None:
+    """Batch crawl multiple job URLs with rate limiting and deduplication."""
+    repository = repository_from_context(ctx)
+    target_urls: list[str] = []
+    if file:
+        target_urls.extend([line.strip() for line in file.read_text().splitlines() if line.strip() and not line.strip().startswith("#")])
+    if urls:
+        target_urls.extend(urls)
+    if not target_urls:
+        typer.echo("Provide at least one URL via --url or --file", err=True)
+        raise typer.Exit(1)
+
+    from .ingestion.batch_scanner import run_batch_crawl
+
+    report = run_batch_crawl(repository, target_urls, use_browser=browser, delay_seconds=delay)
+    typer.echo(f"Batch crawl finished: {report.imported} imported, {report.existing} existing, {report.failed} failed (total: {report.total})")
+    for item in report.items:
+        if item.status == "failed":
+            typer.echo(f"  FAILED: {item.url} -> {item.error}")
+        else:
+            typer.echo(f"  {item.status.upper()}: {item.job_id} | {item.title} ({item.employer})")
+
+    if output:
+        output.write_text(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+        typer.echo(f"Summary written to: {output}")
 
 
 def _run_source_search(

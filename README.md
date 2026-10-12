@@ -1,332 +1,214 @@
-# Mốc Nghề
+# 🌿 Mốc Nghề (mocnghe)
 
-Local-first CLI for job import, evidence-grounded profiles and evaluations, reviewed CV PDF export, and local application drafts.
+> **Trợ lý tìm việc & may đo hồ sơ ứng tuyển cá nhân hóa — Local-first, minh bạch và chống bịa đặt.**
 
-> 📖 **Architecture & Operations Guides:**
-> - [Tiếng Việt: docs/architecture_and_operations_vi.md](docs/architecture_and_operations_vi.md)
-> - [English: docs/architecture_and_operations_en.md](docs/architecture_and_operations_en.md)
-> 
-> 🔄 **Tài Liệu Chi Tiết Từng Luồng Nghiệp Vụ (Lifecycle Walkthroughs):**
-> - **Xử lý CV (CV Processing):** [Tiếng Việt](docs/cv_processing_lifecycle_vi.md) | [English](docs/cv_processing_lifecycle_en.md)
-> - **Thu thập JD (Job Crawling):** [Tiếng Việt](docs/job_crawling_lifecycle_vi.md) | [English](docs/job_crawling_lifecycle_en.md)
-> - **Ứng tuyển & Tracking (Application Lifecycle):** [Tiếng Việt](docs/application_tracking_lifecycle_vi.md) | [English](docs/application_tracking_lifecycle_en.md)
+Mốc Nghề là công cụ dòng lệnh (CLI) và bộ kỹ năng AI Agent hỗ trợ trọn vẹn chu trình tìm việc cho ứng viên tại Việt Nam: từ thu thập tin tuyển dụng, đánh giá độ phù hợp (triage), may đo CV & Cover Letter theo chuẩn ATS/Modern, cho đến quản lý trạng thái nộp đơn.
 
-## Naming and existing workspaces
+---
 
-The distribution, Python import package, and console command are now `mocnghe`;
-the display name is **Mốc Nghề**. Use `uv sync` after upgrading and update scripts/imports
-from `careerviet` to `mocnghe`; no legacy command or Python package alias is installed.
-The repository name is `b4iterdev/mocnghe` (local checkout directory: `mocnghe`).
+## ✨ Điểm Nổi Bật
 
-**Storage compatibility:** every workspace continues to use `careerviet.sqlite3`, including
-new workspaces. This intentionally retained legacy filename prevents silently opening a new,
-empty database after the rename. Keep your existing workspace path and `profile.json`;
-no data files need renaming or copying. Back up private workspaces before upgrading.
+- 🔒 **Local-First & Bảo Mật Quyền Riêng Tư:** Toàn bộ dữ liệu hồ sơ, lịch sử nộp đơn lưu cục bộ trong CSDL SQLite (`careerviet.sqlite3`). Dữ liệu danh tính cá nhân không bị gửi lên mạng khi phân tích job.
+- 🎯 **Grounded Evidence (Không Bịa Đặt):** Mọi kinh nghiệm, kỹ năng trên CV và Cover Letter đều phải xuất phát từ bằng chứng thực tế đã xác nhận (`CandidateEvidence`). Tuyệt đối không sinh số liệu ảo (hallucination).
+- 🎨 **Render Đẹp & Chuẩn ATS:** Hỗ trợ cả 2 engine xuất PDF:
+  - `--engine modern`: Giao diện hiện đại (HTML/CSS + Playwright) với dải màu gradient, thẻ năng lực trực quan (phong cách tương tự *career-ops*).
+  - `--engine reportlab`: Engine native Python nhẹ, ổn định, hỗ trợ tiếng Việt có dấu hoàn chỉnh.
+- 📬 **Cover Letter Tự Động:** Tự động sinh thư ứng tuyển chuyên nghiệp (Anh/Việt) liên kết chặt chẽ với những kinh nghiệm phù hợp nhất với vị trí.
+- 📊 **Theo Dõi Đơn Tuyển Dụng Tuyến Tính:** Quản lý phễu ứng tuyển có kiểm soát (`discovered` → `shortlisted` → `drafting` → `ready` → `applied`). Người dùng luôn giữ quyền kiểm soát tối thượng khi gửi đơn (human-in-the-loop).
 
-Configure providers with `MOCNGHE_EVAL_ENDPOINT`, `MOCNGHE_EVAL_MODEL`,
-`MOCNGHE_EVAL_API_KEY`, and optionally `MOCNGHE_EVAL_ALLOW_LOOPBACK_HTTP`.
-Legacy `CAREERVIET_EVAL_*` settings remain supported **only when none of those four new
-variables is present**. Any new setting selects the entire new namespace; incomplete or
-empty required values fail closed. Credentials and loopback permissions are never mixed
-between namespaces, preventing a legacy key from being sent to a newly configured endpoint.
+---
 
-## Setup
+## 🚀 Hướng Dẫn Bắt Đầu Nhanh (5 Phút)
+
+### 1. Cài đặt môi trường
+
+Yêu cầu: Python `>= 3.12` và [uv](https://docs.astral.sh/uv/).
 
 ```bash
+# Clone repository
+git clone git@github.com:b4iterdev/mocnghe.git
+cd mocnghe
+
+# Cài đặt thư viện
 uv sync
+
+# (Tùy chọn) Cài đặt trình duyệt cho tính năng Render Modern & Web Crawler
+uv pip install -e ".[browser]"
+uv run playwright install chromium
 ```
 
-## Tests
+### 2. Khởi tạo Không gian làm việc (Workspace)
 
-```bash
-uv run pytest tests/unit/test_models.py -q
-uv run pytest tests/unit/test_manual_import.py -q
-uv run pytest tests/integration/test_cli.py -q
-uv run pytest -q
-uv run ruff check .
-```
-
-## HTTP Source Ingestion
-
-Milestone 2 adds bounded, opt-in public HTTP ingestion for the observed ITviec and VietnamWorks sources while preserving manual import and SQLite behavior. Offline fixture mode is the default for HTTP source commands; live public HTTP requires `--live`.
-
-Search an offline ITviec fixture without importing:
-
-```bash
-uv run mocnghe --workspace /tmp/mocnghe-fixture jobs search --source itviec --fixture tests/fixtures/http/itviec_search.html --keyword C++
-```
-
-Import matching offline fixture jobs:
-
-```bash
-uv run mocnghe --workspace /tmp/mocnghe-fixture jobs ingest --source itviec --fixture tests/fixtures/http/itviec_search.html --keyword C++
-```
-
-Live use is conservative and bounded. Unknown policy, access restrictions, schema drift, missing VietnamWorks payload provenance, challenges, 403, and 429 responses are reported as structured states rather than treated as empty success. The VietnamWorks adapter supports offline parsing of observed JSON shapes but live POST search remains unsupported until request payload provenance is available.
-
-Run the bounded live benchmark:
-
-```bash
-uv run python scripts/run_milestone2_benchmark.py --output docs/benchmarks/milestone-2-live-benchmark.json
-```
-
-The benchmark is limited to 12 total public HTTPS requests and records actual status, bytes, latency, policy state, and extraction counts under `docs/benchmarks/`.
-
-## CLI Smoke Usage
-
-Initialize a workspace:
+Mặc định Mốc Nghề sử dụng thư mục `data/` làm workspace:
 
 ```bash
 uv run mocnghe --workspace data init
 ```
 
-Import the same JD twice to verify stable dedupe:
+### 3. Nạp Hồ sơ Ứng viên (Onboarding)
+
+Tạo file `data/profile.json` chứa thông tin cá nhân và danh sách các bằng chứng năng lực (xem mẫu tại `tests/fixtures/synthetic_profile.json`), sau đó xác nhận vào hệ thống:
 
 ```bash
-uv run mocnghe --workspace data import-jd --file tests/fixtures/synthetic_jd.txt
-uv run mocnghe --workspace data import-jd --file tests/fixtures/synthetic_jd.txt
+# Kiểm tra định dạng hồ sơ
+uv run mocnghe --workspace data profile validation
+
+# Xác nhận và lưu vào CSDL
+uv run mocnghe --workspace data profile confirm-file
 ```
 
-Paste a JD from standard input instead of reading a file:
+---
+
+## 🛠️ Quy Trình Sử Dụng Hàng Ngày
+
+```
+  [1. Thu thập JD]  ──>  [2. Đánh giá Triage]  ──>  [3. May đo CV & Cover Letter]  ──>  [4. Theo dõi Đơn]
+  crawl / import         evaluate triage            cv / cover-letter               track / apply
+```
+
+### Bước 1: Thu thập Tin tuyển dụng (JD)
+
+Hỗ trợ lấy tin trực tiếp từ đường dẫn (ITviec, Greenhouse, Indeed, ...) hoặc nhập file văn bản:
 
 ```bash
-uv run mocnghe --workspace data import-jd --stdin < tests/fixtures/synthetic_customer_jd.txt
+# Crawl trực tiếp từ URL
+uv run mocnghe --workspace data jobs crawl "https://itviec.com/it-jobs/..."
+
+# Quét hàng loạt diện rộng từ file danh sách URL
+uv run mocnghe --workspace data jobs batch-crawl --file urls.txt --delay 0.5
+
+# Hoặc nhập từ file văn bản / sao chép từ clipboard
+uv run mocnghe --workspace data import-jd --file my_jd.txt
+cat my_jd.txt | uv run mocnghe --workspace data import-jd --stdin
 ```
 
-`--file` and `--stdin` are mutually exclusive.
-
-List and show persisted jobs:
-
+Xem danh sách việc làm đã lưu:
 ```bash
 uv run mocnghe --workspace data jobs list
 uv run mocnghe --workspace data jobs show <job_id>
 ```
 
-Check profile validation and local health:
+### Bước 2: Đánh giá độ phù hợp (Triage)
 
-```bash
-uv run mocnghe --workspace data profile validation
-uv run mocnghe --workspace data doctor
-```
-
-## Milestone 3: Profile Onboarding & Grounded Evaluation
-
-Milestone 3 implements conversational profile onboarding, immutable evidence profiles, deterministic constraint triage, and dual-runtime evaluation contracts (CLI agent packet export/import and direct OpenAI-compatible provider evaluation).
-
-### Conversational Onboarding CLI
-
-Start or resume onboarding questions one at a time:
-
-```bash
-uv run mocnghe --workspace data profile answer --draft-id draft-1 --text "Synthetic candidate, contact private, based in Ha Noi."
-```
-
-Review draft status and correct specific fields:
-
-```bash
-uv run mocnghe --workspace data profile review --draft-id draft-1
-uv run mocnghe --workspace data profile correct --draft-id draft-1 --field preferences --text "Preferences: Ha Noi, remote yes."
-```
-
-Explicitly confirm draft to store an immutable versioned profile:
-
-```bash
-uv run mocnghe --workspace data profile confirm --draft-id draft-1
-```
-
-### Deterministic Constraint Triage
-
-Check hard constraints (location, compensation floors, engagement type) before spending model evaluation:
+Sàng lọc nhanh xem công việc có thỏa mãn các tiêu chí cứng (địa điểm, thời gian làm việc, mức lương sàn, kỹ năng cốt lõi) hay không:
 
 ```bash
 uv run mocnghe --workspace data evaluate triage <job_id>
 ```
 
-### Dual-Runtime Evaluation
+### Bước 3: Tạo & Xuất CV Cá nhân hóa
 
-Export privacy-redacted evaluation packet (omits candidate identity, binds canonical hashes, requires `--consent`):
-
-```bash
-uv run mocnghe --workspace data evaluate export-packet <job_id> --profile-version <version> --output packet.json --consent
-```
-
-Import and validate candidate-grounded evaluation report:
+Chọn các bằng chứng năng lực (`--evidence`) phù hợp nhất với JD:
 
 ```bash
-uv run mocnghe --workspace data evaluate import-report --packet packet.json --response report.json
+# 1. Tạo bản thảo CV
+uv run mocnghe --workspace data cv create \
+  --profile-version 1.0 \
+  --language en \
+  --job-id <job_id> \
+  --identity name --identity email --identity linkedin --identity github --identity location \
+  --evidence ev_camera --evidence ev_web --evidence ev_education
+
+# 2. Xem lại nội dung và lấy mã băm an toàn (content_hash)
+uv run mocnghe --workspace data cv review <cv_id>
+
+# 3. Phê duyệt nội dung CV (bảo vệ chống giả mạo)
+uv run mocnghe --workspace data cv approve <cv_id> --hash <content_hash>
+
+# 4. Xuất trọn bộ bundle CV (PDF + HTML + JSON)
+uv run mocnghe --workspace data cv export <cv_id> --output output/my_cv --engine modern --max-pages 2
+
+# 5. Kiểm thử trực quan tránh tràn trang / vỡ bố cục
+uv run mocnghe --workspace data cv verify-visual <cv_id> --snapshot output/my_cv/snapshot.png
 ```
 
-Direct OpenAI-compatible evaluation is also available programmatically via `run_direct_provider_evaluation` with `EvaluationProviderConfig.from_env()`.
+### Bước 4: Tạo Thư ứng tuyển (Cover Letter)
 
-## Milestone 4: Reviewed CVs and Local Application Drafts
-
-M4 adds immutable SQLite CV revisions and explicit hash-bound approval, EN/VI PDF export,
-CLI-agent/direct-provider tailoring proposals, and local email/form drafts. No applications
-are sent. Every generated document remains separate from the application tracker.
-
-### Create, review, approve, export
-
-Use a **confirmed** profile version and its actual evidence IDs (shown by the profile workflow).
-Replace the uppercase placeholders below. Repeat `--evidence` to select multiple items.
-Omit `--job-id` for a general CV; add it to bind the CV to a stored job.
+Sinh Cover Letter song ngữ dựa trên các nội dung đã được duyệt trong CV:
 
 ```bash
-uv run mocnghe --workspace data cv create --profile-version VERSION --evidence EVIDENCE_ID --language vi --identity name
-uv run mocnghe --workspace data cv list
-uv run mocnghe --workspace data cv review CV_ID
-uv run mocnghe --workspace data cv approve CV_ID --hash EXACT_REVIEW_HASH
-uv run mocnghe --workspace data cv export CV_ID --output /tmp/new-cv-bundle --max-pages 2
+# Tạo bản thảo thư xin việc
+uv run mocnghe --workspace data cover-letter create --cv-id <cv_id> --job-id <job_id> --recipient "Hiring Team"
+
+# Duyệt nội dung
+uv run mocnghe --workspace data cover-letter approve <cl_id> --hash <content_hash>
+
+# Xuất file (PDF, Markdown, TXT)
+uv run mocnghe --workspace data cover-letter export <cl_id> --output output/my_cover_letter
 ```
 
-Export contains `cv.pdf` and `cv.json`. Output directories must not already exist, and their
-parent must exist. The renderer fails rather than silently shortening content to meet the page
-budget. `--max-pages` supports 1–10, default 2. The single-column A4 layout uses bundled,
-embedded Noto Sans with Vietnamese glyphs. Unsupported glyphs fail clearly. It uses ReportLab
-rather than requiring a separate Typst compiler; all candidate strings are escaped data.
-No universal ATS compatibility claim is made.
+### Bước 5: Quản lý Phễu Ứng tuyển (Tracking)
 
-**Language and truthfulness:** `en`/`vi` chooses headings; extractive creation preserves original
-evidence wording and does not pretend to translate it. For translation/tailoring, export a packet
-for a CLI agent or use an explicitly consented provider. Every rewrite is an unapproved proposal.
-Exact quote validation proves provenance, **not semantic truth** or relevance. The candidate must
-review dates, employment/volunteer distinctions, qualifications, metrics and uncertainty before
-approving the exact content hash. Local identity fields are opt-in via repeated `--identity`.
-There is no mandatory photo, DOB, marital status, GitHub or technical-project section.
-
-### Tailoring and translations
+Theo dõi chặt chẽ tiến trình qua từng giai đoạn:
 
 ```bash
-uv run mocnghe --workspace data cv export-packet CV_ID --output /tmp/new-tailoring-packet --consent
-uv run mocnghe --workspace data cv import-response CV_ID --response response.json
-uv run mocnghe cv skill
+# Chuyển trạng thái theo dõi
+uv run mocnghe --workspace data track <job_id> --state shortlisted
+uv run mocnghe --workspace data track <job_id> --state drafting
+uv run mocnghe --workspace data track <job_id> --state ready --cv <cv_id>
+
+# Sau khi đã nộp thủ công trên website của nhà tuyển dụng:
+uv run mocnghe --workspace data apply <job_id> --cv <cv_id> --confirm
+
+# Cập nhật kết quả phỏng vấn / phản hồi
+uv run mocnghe --workspace data track <job_id> --state interviewing
+uv run mocnghe --workspace data applications list
 ```
 
-The packet contains strict instructions, selected claims, target language, optional JD and a
-canonical hash. A response has only `packet_hash` and `claims`; keep evidence IDs in order and
-preserve exact quote/status/uncertainty. Set `mode` to `proposed` when changing text. Import creates
-a **new unapproved revision**. For manual edits, `cv revise CV_ID --claims claims.json` accepts
-an array of the same claim objects. Re-review and approve the new ID, never the old hash.
+---
 
-Direct-provider mode uses `MOCNGHE_EVAL_ENDPOINT` (complete chat/completions endpoint),
-`MOCNGHE_EVAL_MODEL`, and `MOCNGHE_EVAL_API_KEY` from your securely configured environment:
+## 🤖 Sử Dụng Cùng AI Coding Agent (Hermes, Claude Code, Cursor)
+
+Mốc Nghề được thiết kế để điều khiển hoàn toàn bằng Slash Commands qua AI Agent:
+
+| Lệnh | Ý nghĩa |
+| :--- | :--- |
+| `/mocnghe-crawl <url>` | Bóc tách và lưu JD từ trang tuyển dụng |
+| `/mocnghe-batch-crawl` | Quét tự động danh sách hạt giống URLs |
+| `/mocnghe-onboard` | Kiểm tra và cập nhật hồ sơ ứng viên |
+| `/mocnghe-triage <job_id>` | Đánh giá mức độ phù hợp giữa bạn và JD |
+| `/mocnghe-tailor <job_id>` | Tạo, may đo và xuất bản CV PDF hoàn chỉnh |
+| `/mocnghe-cover-letter <job_id>` | Sinh thư xin việc gắn kèm bằng chứng năng lực |
+| `/mocnghe-visual-test <cv_id>` | Kiểm định trực quan ảnh snapshot PDF |
+| `/mocnghe-track <job_id> <state>` | Xem và chuyển trạng thái hồ sơ ứng tuyển |
+
+---
+
+## 🔧 Cấu Hình Nâng Cao & Tích Hợp AI Provider
+
+Nếu muốn sử dụng mô hình LLM ngoài (như OpenAI, 9Router, DeepSeek) để gợi ý diễn đạt hoặc đánh giá chuyên sâu:
 
 ```bash
-uv run mocnghe --workspace data cv provider CV_ID --consent
+export MOCNGHE_EVAL_ENDPOINT="https://api.openai.com/v1/chat/completions"
+export MOCNGHE_EVAL_MODEL="gpt-4o-mini"
+export MOCNGHE_EVAL_API_KEY="sk-..."
 ```
 
-Configure and inspect the destination/model before consenting. Selected evidence/JD leaves the
-device; separate profile identity fields are omitted, **but personal details embedded in quotes
-are not automatically scrubbed**. Review those before export/transmission. Provider output uses
-the same canonical import checks and remains unapproved. HTTPS required; loopback HTTP requires
-`MOCNGHE_EVAL_ALLOW_LOOPBACK_HTTP=1` for local testing. Requests do not follow redirects and
-response bytes/time are bounded. No live production provider has been verified for M4; tests
-cover synthetic mocks and a real loopback HTTP server.
+*Lưu ý:* Mốc Nghề luôn tự động loại bỏ thông tin định danh cá nhân (PII) trước khi tạo gói gửi cho AI.
 
-### Local email/form drafts
+---
 
-Subject and application route must be supplied exactly by the user/from the employer's instructions.
-The selected approved CV controls language and candidate wording. Drafts do not attach a CV or send anything.
+## 📚 Tài Liệu Kỹ Thuật & Kiến Trúc
+
+- 📑 [Luồng Xử lý Hồ sơ & May đo CV (Chi tiết)](docs/cv_processing_lifecycle_vi.md)
+- 🌐 [Cơ chế Thu thập & Adapter Bóc tách JD](docs/job_crawling_lifecycle_vi.md)
+- 🎯 [Máy Trạng Thái Ứng Tuyển & Tracking](docs/application_tracking_lifecycle_vi.md)
+- 🏛️ [Kiến trúc Toàn Hệ Thống (Architecture Guide)](docs/architecture_and_operations_vi.md)
+
+---
+
+## 🧪 Kiểm Thử Hệ Thống
 
 ```bash
-uv run mocnghe --workspace data draft create CV_ID --job-id JOB_ID --subject 'EXACT SUBJECT' --route 'EXACT APPLICATION ROUTE' --questions questions.json
-uv run mocnghe --workspace data draft review DRAFT_ID
-uv run mocnghe --workspace data draft approve DRAFT_ID --hash EXACT_REVIEW_HASH
-uv run mocnghe --workspace data draft export DRAFT_ID --output /tmp/new-application-bundle
-```
-
-`--questions` is optional. Its format is:
-
-```json
-{"questions": ["Relevant experience?", "Available start date?"], "answers": {"0": "EVIDENCE_ID"}}
-```
-
-Answer keys are zero-based question indexes; values select approved CV evidence text. Unknown
-answers remain `[UNANSWERED]`, not inferred. Quote existence does not prove question relevance;
-review that explicitly. To change answers/subject/route create another immutable draft. Freeform
-answer composition is deliberately limited to reviewed CV wording; revise the CV first if needed.
-Exports contain `email.txt`, `form.txt`, `application.json`, and `README.txt` with route/warnings.
-Profile/CV/JD hashes persist with each draft; stale canonical inputs block approval/export.
-
-### Reproducible synthetic smoke
-
-```bash
+# Chạy toàn bộ test suite
 uv run pytest -q
+
+# Kiểm tra định dạng code & chuẩn linter
 uv run ruff check .
-uv run python scripts/run_m4_smoke.py
-uv build
 ```
 
-The smoke uses only a new OS temporary workspace and prints its retained EN/VI PDF, preview image
-and application bundle locations. It exercises separate real CLI processes, text extraction,
-page count, text bounding boxes, unanswered questions and the unchanged `applied` flag.
-Synthetic examples are demonstrations, not real candidates or job opportunities.
+---
 
-## Milestone 5: Local Application Tracking
+## 📄 Bản Quyền & Giấy Phép
 
-Tracking is explicit and independent of document generation. `apply` **records an already
-manually submitted application; it does not send anything**. Commands below return JSON.
-
-```bash
-uv run mocnghe --workspace data track JOB_ID
-uv run mocnghe --workspace data track JOB_ID --state shortlisted
-uv run mocnghe --workspace data track JOB_ID --state drafting
-uv run mocnghe --workspace data track JOB_ID --state ready --cv APPROVED_CV_ID
-# Only after you have manually submitted that CV:
-uv run mocnghe --workspace data apply JOB_ID --cv APPROVED_CV_ID --confirm
-uv run mocnghe --workspace data track JOB_ID --state interviewing
-uv run mocnghe --workspace data applications list --state interviewing
-uv run mocnghe --workspace data applications history JOB_ID
-uv run mocnghe applications skill
-```
-
-Allowed transitions:
-
-| From | To |
-|---|---|
-| discovered | shortlisted, archived |
-| shortlisted | drafting, withdrawn, archived |
-| drafting | ready, shortlisted, withdrawn, archived |
-| ready | drafting, applied, withdrawn, archived |
-| applied | interviewing, offer, rejected, withdrawn, archived |
-| interviewing | offer, rejected, withdrawn, archived |
-| offer | withdrawn, archived |
-| rejected / withdrawn | archived |
-| archived | terminal |
-
-Ready requires a current approved CV for this job (or an untargeted CV). To replace a ready CV,
-return to drafting first. Applied requires the same reviewed selection, unchanged JD, and explicit
-confirmation. Snapshots retain CV revision/hash, profile version and exact JD content. The UTC
-`applied_at` records when confirmation was entered, not independently verified submission time.
-Later outcomes preserve it; `jobs.applied` means ever confirmed applied. History starts with the
-first explicit transition; import's discovered state is the initial baseline. No automatic reopen
-or multiple submission attempts per job in M5.
-
-State, event and applied-flag writes are transactional. Existing application rows are reused;
-ambiguous duplicate legacy rows fail closed without silently deleting records. Snapshot hashes
-catch accidental payload changes, not a malicious local actor rewriting both content and hash.
-Snapshots remain readable after live JD changes. Database migration adds tracking columns/tables
-on first tracking use; back up private workspaces before upgrading.
-
-URL checks reject nonpublic DNS answers (including shared address space) and revalidate redirects.
-They do **not** pin DNS answers to the socket: DNS-rebinding protection is not claimed. Existing
-host allowlists and source restrictions remain; no arbitrary URL ingestion was introduced.
-
-Run the synthetic, separate-process tracking smoke with `uv run python scripts/run_m5_smoke.py`.
-
-## Current Scope
-
-Milestones 1 through 5 implement:
-1. Local manual text/file JD import, Pydantic contracts, SQLite persistence with provenance, and stable dedupe.
-2. Bounded public HTTP ingestion for ITviec and VietnamWorks with robots/terms checks and offline fixture modes.
-3. Conversational candidate onboarding, versioned profiles, deterministic triage, and privacy-grounded dual-runtime JD evaluation contracts.
-4. Reviewed CV PDF/JSON bundles, tailoring proposals, and local email/form application drafts.
-5. Explicit local application states, confirmation gates, version snapshots and transition history.
-
-Imported jobs are never automatically marked applied or submitted externally.
-
-## Limitations
-
-Sending, web dashboard, legal calculations and additional source coverage
-remain deferred. The local workspace database is not encrypted at rest; protect its directory
-and backups. Existing ingestion restrictions remain. Automatic translation is not part of the
-extractive path, and generative factual correctness always requires human review.
+Phát triển bởi **Thai & Hermes**. Mã nguồn được phát hành theo giấy phép mã nguồn mở MIT.

@@ -6,12 +6,14 @@ import tempfile
 from html import escape
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
 
 LABELS = {
     "en": {"title": "Curriculum Vitae", "experience": "Experience", "education": "Education",
@@ -55,38 +57,58 @@ def render_pdf(cv, max_pages=2):
     glyphs = pdfmetrics.getFont(font).face.charToGlyph
     if any(ord(ch) not in glyphs for text in texts for ch in text if ch not in "\n\r\t"):
         raise ValueError("selected text contains glyphs unsupported by the bundled font")
-    body = ParagraphStyle("body", fontName=font, fontSize=10.5, leading=15, spaceAfter=7)
-    heading = ParagraphStyle("heading", parent=body, fontSize=13, leading=19,
-                             spaceBefore=12, spaceAfter=6, keepWithNext=True)
-    title = ParagraphStyle("title", parent=body, fontSize=20, leading=28, spaceAfter=12)
+    body = ParagraphStyle("body", fontName=font, fontSize=9.5, leading=14, spaceAfter=4)
+    heading = ParagraphStyle("heading", fontName=font, fontSize=11, leading=15,
+                             spaceBefore=9, spaceAfter=2, keepWithNext=True)
+    title = ParagraphStyle("title", fontName=font, fontSize=18, leading=22, alignment=1, spaceAfter=4)
+    contact_style = ParagraphStyle("contact", fontName=font, fontSize=9.5, leading=13, alignment=1, spaceAfter=8)
+    claim_style = ParagraphStyle("claim", parent=body, leftIndent=12, firstLineIndent=-12, spaceAfter=3.5)
     labels = LABELS[cv.language]
     def p(text, style=body):
         return Paragraph(escape(text).replace("\n", "<br/>"), style)
-    story = [p(cv.identity.get("name", labels["title"]), title)]
-    for key, value in cv.identity.items():
-        if key != "name":
-            story.append(p(value))
+    story: list[Any] = [p(cv.identity.get("name", labels["title"]), title)]
+    contacts = [v for k, v in cv.identity.items() if k != "name" and v.strip()]
+    if contacts:
+        story.append(p(" | ".join(contacts), contact_style))
+    story.append(Spacer(1, 4))
     for section in ("experience", "education", "skills", "credentials", "other"):
         claims = [c for c in cv.claims if c.section == section]
         if not claims:
             continue
-        story.append(p(labels[section], heading))
+        story.append(p(labels[section].upper(), heading))
+        story.append(HRFlowable(width="100%", thickness=0.75, color=colors.HexColor("#2b2b2b"), spaceBefore=1, spaceAfter=5))
         for claim in claims:
-            story.append(p(claim.text))
+            story.append(p(f"•  {claim.text}", claim_style))
     story.append(Spacer(1, 5))
     buf = io.BytesIO()
     def check_page(canvas, document):
         if document.page > max_pages:
             raise ValueError("CV exceeds page budget; shorten content or increase --max-pages")
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=48, rightMargin=48,
-                            topMargin=42, bottomMargin=42, title=labels["title"], author="")
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=36, rightMargin=36,
+                            topMargin=36, bottomMargin=36, title=labels["title"], author="")
     doc.build(story, onFirstPage=check_page, onLaterPages=check_page)
     return buf.getvalue()
 
 
-def export_cv(service, cv_id, target, *, max_pages=2):
+def export_cv(service, cv_id, target, *, engine: str = "reportlab", max_pages: int = 2):
     cv = service.get(cv_id)
     if not service.approved(cv_id):
         raise PermissionError("review and approve exact CV content before export")
-    pdf = render_pdf(cv, max_pages)
-    publish_bundle(Path(target), {"cv.pdf": pdf, "cv.json": cv.model_dump_json(indent=2).encode()})
+    if engine == "modern":
+        from .cv_modern_render import render_modern_html, render_modern_pdf
+        pdf = render_modern_pdf(cv, max_pages)
+        html = render_modern_html(cv)
+        publish_bundle(
+            Path(target),
+            {
+                "cv.pdf": pdf,
+                "cv.html": html.encode("utf-8"),
+                "cv.json": cv.model_dump_json(indent=2).encode(),
+            },
+        )
+    else:
+        pdf = render_pdf(cv, max_pages)
+        publish_bundle(
+            Path(target),
+            {"cv.pdf": pdf, "cv.json": cv.model_dump_json(indent=2).encode()},
+        )
