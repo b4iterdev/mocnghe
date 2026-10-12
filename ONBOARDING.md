@@ -1,62 +1,81 @@
-# 🚀 Hướng Dẫn Thiết Lập 1 Chạm Cùng AI Agent (One-Shot Onboarding)
+# 🚀 Thiết Lập Mốc Nghề 1 Dòng Lệnh (Zero-Download Onboarding)
 
-Bạn không cần phải tự cấu hình môi trường hay gõ từng câu lệnh phức tạp. Chỉ cần **copy đoạn prompt bên dưới** và **dán vào AI Agent của bạn** (Hermes, Claude Code, Cursor, OpenCode, Codex, v.v.), Agent sẽ tự động lo toàn bộ phần kỹ thuật.
+Người dùng **không cần tải trước mã nguồn (không cần clone repo)**. Chỉ cần mở bất kỳ AI Agent nào (Hermes, Claude Code, Cursor, Windsurf, OpenCode, Codex) và gửi duy nhất 1 câu:
+
+> 💬 **"Đọc https://raw.githubusercontent.com/b4iterdev/mocnghe/main/ONBOARDING.md và thiết lập mocnghe cho tôi"**  
+> *(hoặc: "Đọc https://github.com/b4iterdev/mocnghe và thiết lập mocnghe cho tôi")*
 
 ---
 
-## 📋 Copy & Paste Prompt Này Vào Agent Của Bạn
+## 🤖 HƯỚNG DẪN DÀNH CHO AI AGENT (AGENT INSTRUCTIONS)
 
-```markdown
-Bạn là trợ lý thiết lập Mốc Nghề (mocnghe). Hãy giúp tôi thiết lập toàn bộ hệ thống từ đầu:
+Khi bạn (AI Agent) nhận được yêu cầu cài đặt hoặc đọc tệp này từ người dùng, hãy thực hiện tuần tự các bước sau trên máy tính của người dùng:
 
-1. KIỂM TRA & CÀI ĐẶT MÔI TRƯỜNG:
-   - Kiểm tra Python (>=3.12) và uv. Nếu chưa có thư viện, hãy chạy: `uv sync`
-   - Cài đặt tính năng render & browser crawler: `uv pip install -e ".[browser]" && uv run playwright install chromium`
-   - Khởi tạo không gian làm việc cục bộ: `uv run mocnghe --workspace data init`
+### BƯỚC 1: Cài đặt công cụ CLI toàn cục (Không cần clone repo)
+Kiểm tra xem hệ thống đã có `uv` chưa. Nếu chưa có, hướng dẫn hoặc cài đặt `uv`.
+Sau đó chạy lệnh cài đặt Mốc Nghề trực tiếp từ GitHub vào hệ thống:
+```bash
+uv tool install --force "mocnghe[browser] @ git+https://github.com/b4iterdev/mocnghe.git"
+uv run playwright install chromium
+```
+*(Lưu ý: Nếu người dùng yêu cầu rõ là muốn clone mã nguồn để phát triển, hãy chạy `git clone https://github.com/b4iterdev/mocnghe.git && cd mocnghe && uv sync` thay thế).*
 
-2. THIẾT LẬP HỒ SƠ ỨNG VIÊN (EVIDENCE PROFILE):
-   - Hãy hỏi tôi xem tôi đã có sẵn file CV (PDF hoặc văn bản) chưa.
-   - NẾU TÔI ĐÃ CÓ CV: Hãy đọc tệp CV của tôi, tự động bóc tách thành danh sách CandidateEvidence chuẩn schema Pydantic (identity, experience, education, skills, credentials, projects). Tuyệt đối không bịa đặt số liệu không có trong CV gốc.
-   - NẾU TÔI CHƯA CÓ CV: Hãy phỏng vấn tôi từng câu một (chỉ 1 câu mỗi lượt) về mục tiêu nghề nghiệp, học vấn, kinh nghiệm, kỹ năng và mức lương kỳ vọng.
-   - Tạo file `data/profile.json` (version: "1.0").
-   - Chạy kiểm tra tính hợp lệ: `uv run mocnghe --workspace data profile validation`
-   - Xác nhận và khóa bất biến vào SQLite: `uv run mocnghe --workspace data profile confirm-file`
-
-3. XÁC MINH & BÀN GIAO:
-   - Chạy kiểm tra chẩn đoán hệ thống: `uv run mocnghe --workspace data doctor`
-   - Khi hoàn tất, báo cáo ngắn gọn cho tôi: hệ thống đã sẵn sàng và hướng dẫn tôi gửi link JD đầu tiên để bắt đầu tìm việc.
+### BƯỚC 2: Khởi tạo Không gian làm việc
+Tạo một thư mục làm việc (hoặc dùng thư mục hiện tại) và khởi tạo CSDL:
+```bash
+mocnghe --workspace data init
 ```
 
----
-
-## 💡 Hướng Dẫn Sử Dụng Theo Từng Công Cụ
-
-### 1. Dùng trên Hermes Agent
-- Mở cuộc trò chuyện mới trong Hermes Desktop.
-- Dán đoạn prompt trên.
-- Nếu bạn đã có file CV, đính kèm file hoặc gõ: `CV của tôi nằm ở /đường_dẫn/cv.pdf`.
-
-### 2. Dùng trên Claude Code / OpenCode
-- Mở terminal trong thư mục `mocnghe`:
+### BƯỚC 3: Cài đặt Skill cho Agent (Tùy nền tảng)
+- **Nếu đang chạy trên Hermes Agent:** Tải skill vào `~/.hermes/skills/productivity/mocnghe/SKILL.md`:
   ```bash
-  claude  # hoặc opencode
+  mkdir -p ~/.hermes/skills/productivity/mocnghe
+  curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o ~/.hermes/skills/productivity/mocnghe/SKILL.md
   ```
-- Dán đoạn prompt trên và nhấn Enter.
+- **Nếu đang chạy trên Cursor / Windsurf:** Tải quy tắc vào `.cursor/rules/mocnghe.md`:
+  ```bash
+  mkdir -p .cursor/rules
+  curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.cursor/rules/mocnghe.md -o .cursor/rules/mocnghe.md
+  ```
+- **Nếu đang chạy trên Claude Code / OpenCode / Codex:** Tải skill vào `.agents/skills/mocnghe/SKILL.md`:
+  ```bash
+  mkdir -p .agents/skills/mocnghe
+  curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o .agents/skills/mocnghe/SKILL.md
+  ```
 
-### 3. Dùng trên Cursor IDE / Windsurf
-- Mở Cursor Chat (`Cmd + L` hoặc `Ctrl + L`).
-- Chuyển sang chế độ **Agent** (chế độ có quyền chạy terminal).
-- Dán đoạn prompt trên và xác nhận các lệnh chạy terminal.
+### BƯỚC 4: Thiết lập Hồ sơ Ứng viên (Profile Onboarding)
+1. Hỏi người dùng: **"Bạn đã có sẵn file CV (PDF hoặc văn bản) chưa?"**
+2. **Trường hợp 1 (Đã có CV):** Yêu cầu người dùng cung cấp đường dẫn hoặc gửi file CV. Đọc tệp và tự động trích xuất các thông tin:
+   - `identity`: name, email, phone, linkedin, github, location.
+   - `evidence`: Bóc tách từng kinh nghiệm, dự án, học vấn, kỹ năng thành các mục nguyên tử có `id` (ví dụ `ev_exp_1`, `ev_edu_1`), trích dẫn nguyên văn `quote`. Tuyệt đối không tự bịa đặt số liệu.
+   - Ghi vào tệp `data/profile.json` (version: `"1.0"`).
+3. **Trường hợp 2 (Chưa có CV):** Phỏng vấn người dùng từng câu một (chỉ 1 câu mỗi lượt) về mục tiêu nghề nghiệp, học vấn, kinh nghiệm, kỹ năng, lương kỳ vọng; sau đó ghi vào `data/profile.json`.
+4. Xác thực và lưu trữ bất biến:
+   ```bash
+   mocnghe --workspace data profile validation
+   mocnghe --workspace data profile confirm-file
+   ```
+
+### BƯỚC 5: Kiểm tra sức khỏe hệ thống & Bàn giao
+Chạy kiểm tra chẩn đoán:
+```bash
+mocnghe --workspace data doctor
+```
+Thông báo cho người dùng biết hệ thống Mốc Nghề đã được cài đặt hoàn tất và hướng dẫn người dùng dán link JD đầu tiên (hoặc gõ `/mocnghe-crawl <url>`) để bắt đầu tìm việc.
 
 ---
 
-## ❓ Những Điều Cần Chuẩn Bị Trước Khi Chạy
-1. **Python:** Phiên bản `>= 3.12` ([Tải Python](https://www.python.org/downloads/)).
-2. **uv:** Trình quản lý gói siêu tốc của Astral ([Tải uv](https://docs.astral.sh/uv/)):
-   ```bash
-   # macOS / Linux
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   # Windows
-   powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-   ```
-3. **File CV có sẵn (Tùy chọn):** Nếu có file CV định dạng `.pdf` hoặc `.md`, quá trình thiết lập sẽ hoàn thành chỉ sau 1 phút.
+## 📋 Prompt Dự Phòng (Dành cho Agent không tự mở URL được)
+
+Nếu AI Agent của bạn không có tính năng duyệt web để tự đọc link trên, hãy copy trực tiếp toàn bộ khối nội dung dưới đây và gửi cho Agent:
+
+```markdown
+Bạn là trợ lý thiết lập Mốc Nghề (mocnghe). Hãy cài đặt và thiết lập cho tôi:
+1. Chạy lệnh cài đặt CLI toàn cục trực tiếp từ GitHub:
+   uv tool install --force "mocnghe[browser] @ git+https://github.com/b4iterdev/mocnghe.git"
+   uv run playwright install chromium
+2. Khởi tạo workspace: `mocnghe --workspace data init`
+3. Hỏi tôi đường dẫn file CV của tôi (nếu có) để bóc tách thành data/profile.json hoặc phỏng vấn tôi từng bước.
+4. Chạy `mocnghe --workspace data profile validation` và `mocnghe --workspace data profile confirm-file`
+5. Kiểm tra chẩn đoán bằng `mocnghe --workspace data doctor` và báo cáo hoàn tất.
+```
