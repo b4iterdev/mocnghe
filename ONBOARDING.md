@@ -20,9 +20,10 @@ uv run playwright install chromium
 ```
 *(Lưu ý: Nếu người dùng yêu cầu rõ là muốn clone mã nguồn để phát triển, hãy chạy `git clone https://github.com/b4iterdev/mocnghe.git && cd mocnghe && uv sync` thay thế).*
 
-### BƯỚC 2: Khởi tạo Không gian làm việc
-Tạo một thư mục làm việc (hoặc dùng thư mục hiện tại) và khởi tạo CSDL:
+### BƯỚC 2: Tạo Thư Mục Làm Việc Riêng Biệt & Khởi Tạo Workspace
+**Lưu ý an toàn:** TUYỆT ĐỐI KHÔNG tạo thư mục `data/` hay CSDL ngay tại thư mục gốc cá nhân (`~` hoặc `$HOME`). Hãy luôn tạo một thư mục làm việc riêng biệt (mặc định là `~/mocnghe-workspace`), sau đó chuyển vào thư mục này để thực hiện toàn bộ các bước tiếp theo:
 ```bash
+mkdir -p ~/mocnghe-workspace && cd ~/mocnghe-workspace
 mocnghe --workspace data init
 ```
 
@@ -74,7 +75,9 @@ Bạn là trợ lý thiết lập Mốc Nghề (mocnghe). Hãy cài đặt và t
 1. Chạy lệnh cài đặt CLI toàn cục trực tiếp từ GitHub:
    uv tool install --force "mocnghe[browser] @ git+https://github.com/b4iterdev/mocnghe.git"
    uv run playwright install chromium
-2. Khởi tạo workspace: `mocnghe --workspace data init`
+2. Tạo thư mục làm việc riêng và khởi tạo (tránh ghi rác vào thư mục gốc Home):
+   mkdir -p ~/mocnghe-workspace && cd ~/mocnghe-workspace
+   mocnghe --workspace data init
 3. Hỏi tôi đường dẫn file CV của tôi (nếu có) để bóc tách thành data/profile.json hoặc phỏng vấn tôi từng bước.
 4. Chạy `mocnghe --workspace data profile validation` và `mocnghe --workspace data profile confirm-file`
 5. Kiểm tra chẩn đoán bằng `mocnghe --workspace data doctor` và báo cáo hoàn tất.
