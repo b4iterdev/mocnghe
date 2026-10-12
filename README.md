@@ -18,7 +18,14 @@ Mốc Nghề là công cụ dòng lệnh (CLI) và bộ kỹ năng AI Agent hỗ
 
 ---
 
-## 🚀 Hướng Dẫn Bắt Đầu Nhanh (5 Phút)
+## ⚡ Bắt Đầu Cực Nhanh (Thiết Lập 1 Chạm Cùng AI Agent)
+
+> 💡 **Bạn dùng AI Agent (Hermes, Claude Code, Cursor, OpenCode, Codex)?**  
+> Không cần gõ từng dòng lệnh thủ công. Hãy mở **[ONBOARDING.md](ONBOARDING.md)**, copy đoạn prompt 1 chạm và dán vào cửa sổ chat của Agent để được tự động thiết lập từ A đến Z!
+
+---
+
+## 🚀 Hướng Dẫn Bắt Đầu Thủ Công (5 Phút)
 
 ### 1. Cài đặt môi trường
 
