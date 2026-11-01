@@ -331,9 +331,11 @@ def render_modern_html(cv: Any) -> str:
 </html>"""
 
 
-def render_modern_pdf(cv: Any, max_pages: int = 2) -> bytes:
+def render_modern_pdf(cv: Any, max_pages: int = 2, *, template: str = "modern") -> bytes:
     """Render CV via Playwright Chromium into PDF; fall back to ReportLab if Playwright fails."""
-    html_content = render_modern_html(cv)
+    from .cv_templates import render_template_html
+
+    html_content = render_template_html(cv, template_name=template)
     try:
         from playwright.sync_api import sync_playwright
 

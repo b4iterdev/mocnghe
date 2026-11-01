@@ -105,9 +105,20 @@ def approve(ctx: typer.Context, cv_id: str,
 @guarded
 def export(ctx: typer.Context, cv_id: str, output: Annotated[Path, typer.Option()],
            engine: Annotated[str, typer.Option(help="Rendering engine: modern or reportlab")] = "modern",
+           template: Annotated[str, typer.Option(help="Template name: modern, classic, minimal")] = "modern",
            max_pages: Annotated[int, typer.Option(min=1, max=10)] = 2):
-    export_cv(service(ctx), cv_id, output, engine=engine, max_pages=max_pages)
-    typer.echo(f"Exported CV bundle: {output}")
+    export_cv(service(ctx), cv_id, output, engine=engine, template=template, max_pages=max_pages)
+    typer.echo(f"Exported CV bundle: {output} (template={template})")
+
+
+@cv_app.command("templates")
+def cv_templates_list():
+    """List available pluggable CV templates."""
+    from .cv_templates import list_templates
+    templates = list_templates()
+    typer.echo("Available CV templates:")
+    for t in templates:
+        typer.echo(f"  • {t}")
 
 
 @cv_app.command("verify-visual")

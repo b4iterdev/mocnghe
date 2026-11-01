@@ -90,14 +90,16 @@ def render_pdf(cv, max_pages=2):
     return buf.getvalue()
 
 
-def export_cv(service, cv_id, target, *, engine: str = "reportlab", max_pages: int = 2):
+def export_cv(service, cv_id, target, *, engine: str = "reportlab", template: str = "modern", max_pages: int = 2):
     cv = service.get(cv_id)
     if not service.approved(cv_id):
         raise PermissionError("review and approve exact CV content before export")
     if engine == "modern":
-        from .cv_modern_render import render_modern_html, render_modern_pdf
-        pdf = render_modern_pdf(cv, max_pages)
-        html = render_modern_html(cv)
+        from .cv_modern_render import render_modern_pdf
+        from .cv_templates import render_template_html
+
+        pdf = render_modern_pdf(cv, max_pages, template=template)
+        html = render_template_html(cv, template_name=template)
         publish_bundle(
             Path(target),
             {

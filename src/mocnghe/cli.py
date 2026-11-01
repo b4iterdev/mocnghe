@@ -22,9 +22,11 @@ app = typer.Typer(no_args_is_help=True, help="Mốc Nghề — local-first caree
 jobs_app = typer.Typer(no_args_is_help=True)
 profile_app = typer.Typer(no_args_is_help=True)
 evaluate_app = typer.Typer(no_args_is_help=True)
+portals_app = typer.Typer(no_args_is_help=True)
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(profile_app, name="profile")
 app.add_typer(evaluate_app, name="evaluate")
+app.add_typer(portals_app, name="portals")
 app.add_typer(cv_app, name="cv")
 app.add_typer(draft_app, name="draft")
 app.add_typer(cover_letter_app, name="cover-letter")
@@ -261,6 +263,66 @@ def jobs_batch_crawl(
         typer.echo(f"Summary written to: {output}")
 
 
+@portals_app.command("validate")
+def portals_validate(
+    ctx: typer.Context,
+    file_path: Annotated[Path | None, typer.Option("--file", help="Path to portals.yaml")] = None,
+) -> None:
+    """Validate portals.yaml configuration against schema."""
+    repository = repository_from_context(ctx)
+    target = file_path
+    if target is None:
+        for fname in ("portals.yaml", "portals.yml"):
+            p = repository.workspace / fname
+            if p.exists():
+                target = p
+                break
+    if target is None or not target.exists():
+        typer.echo("No portals.yaml or portals.yml found in workspace.", err=True)
+        raise typer.Exit(1)
+    from .portals import validate_portals_config
+
+    errors = validate_portals_config(target)
+    if errors:
+        typer.echo(f"portals: invalid ({target})", err=True)
+        for err in errors:
+            typer.echo(f"  - {err}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"portals: valid ({target})")
+
+
+@portals_app.command("scan")
+def portals_scan(
+    ctx: typer.Context,
+    use_browser: Annotated[bool, typer.Option("--use-browser", help="Enable Playwright browser extraction")] = False,
+    delay: Annotated[float, typer.Option("--delay", help="Delay in seconds between requests")] = 0.5,
+) -> None:
+    """Scan configured portal sources and batch-crawl target jobs."""
+    repository = repository_from_context(ctx)
+    repository.initialize()
+    from .ingestion.batch_scanner import run_batch_crawl
+    from .portals import load_portals_config
+
+    config = load_portals_config(repository.workspace)
+    if config is None:
+        typer.echo("No portals.yaml or portals.yml found in workspace.", err=True)
+        raise typer.Exit(1)
+
+    urls = [url for s in config.sources if s.enabled for url in s.urls]
+    if not urls:
+        typer.echo("No active URLs found in portals.yaml sources.", err=True)
+        return
+
+    typer.echo(f"Scanning {len(urls)} URLs across configured portals...")
+    report = run_batch_crawl(
+        repository,
+        urls,
+        use_browser=use_browser,
+        delay_seconds=delay,
+    )
+    typer.echo(f"Scanned {report.total} URLs: {report.imported} imported, {report.existing} existing, {report.failed} failed.")
+
+
 def _run_source_search(
     repository: CareerRepository,
     source: str,
@@ -440,6 +502,49 @@ def profile_confirm_file(
     typer.echo(f"confirmed profile {profile.profile_id} version={profile.version}")
 
 
+@profile_app.command("brief")
+def profile_brief(
+    ctx: typer.Context,
+    profile_version: Annotated[str | None, typer.Option("--profile-version", help="Profile version")] = None,
+) -> None:
+    """Print compact first-pass triage brief for candidate profile."""
+    repository = repository_from_context(ctx)
+    repository.initialize()
+    if profile_version is not None:
+        profile = repository.get_profile_version(profile_version)
+    else:
+        profile = repository.get_latest_profile()
+    if profile is None:
+        typer.echo("No confirmed profile found in workspace.", err=True)
+        raise typer.Exit(1)
+    from .briefing import generate_brief
+    typer.echo(generate_brief(profile))
+
+
+@profile_app.command("framing")
+def profile_framing(
+    ctx: typer.Context,
+    profile_version: Annotated[str | None, typer.Option("--profile-version", help="Profile version")] = None,
+    output: Annotated[Path | None, typer.Option("--output", help="Directory to export framing files")] = None,
+) -> None:
+    """Generate separate framing (_profile.md) and triage brief (_brief.md)."""
+    repository = repository_from_context(ctx)
+    repository.initialize()
+    if profile_version is not None:
+        profile = repository.get_profile_version(profile_version)
+    else:
+        profile = repository.get_latest_profile()
+    if profile is None:
+        typer.echo("No confirmed profile found in workspace.", err=True)
+        raise typer.Exit(1)
+    from .briefing import export_framing_bundle
+    target_dir = output or repository.workspace
+    bundle = export_framing_bundle(profile, target_dir)
+    typer.echo(f"Exported framing bundle to {target_dir}:")
+    typer.echo(f"  • {bundle['brief']}")
+    typer.echo(f"  • {bundle['profile']}")
+
+
 @evaluate_app.command("triage")
 def evaluate_triage(
     ctx: typer.Context,
@@ -475,6 +580,61 @@ def evaluate_triage(
         typer.echo("conditional:")
         for c in result.conditional:
             typer.echo(f"  - {c.constraint}: {c.evidence}")
+
+
+@evaluate_app.command("gap")
+def evaluate_gap(
+    ctx: typer.Context,
+    job_id: str,
+    profile_version: Annotated[str | None, typer.Option("--profile-version", help="Profile version")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Output raw JSON")] = False,
+) -> None:
+    """Analyze skill gaps between a job's requirements and candidate profile."""
+    repository = repository_from_context(ctx)
+    repository.initialize()
+    job = repository.get_job(job_id)
+    if job is None:
+        typer.echo(f"Job not found: {job_id}", err=True)
+        raise typer.Exit(1)
+    if profile_version is not None:
+        profile = repository.get_profile_version(profile_version)
+    else:
+        profile = repository.get_latest_profile()
+    if profile is None:
+        typer.echo("No confirmed profile found", err=True)
+        raise typer.Exit(1)
+    from .gap import analyze_skill_gap
+
+    report = analyze_skill_gap(profile, job)
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+        return
+
+    typer.echo(f"\n🎯 Skill-Gap Analysis for {job.title} at {job.employer} (`{job.job_id}`)")
+    typer.echo(f"📊 Candidate Profile: {profile.profile_id} (v{profile.version})")
+    typer.echo(f"⭐ Match Coverage: {report.match_score_pct}% ({len(report.matched)}/{report.total_requirements} requirements)\n")
+
+    if report.matched:
+        typer.echo("✅ MATCHED REQUIREMENTS:")
+        for m in report.matched:
+            skills = f" [{', '.join(m.matching_skills)}]" if m.matching_skills else ""
+            typer.echo(f"  • {m.requirement_text}{skills}")
+        typer.echo("")
+
+    if report.potential:
+        typer.echo("⚠️  POTENTIAL / ADJACENT:")
+        for p in report.potential:
+            typer.echo(f"  • {p.requirement_text} (partial evidence match)")
+        typer.echo("")
+
+    if report.gaps:
+        typer.echo("❌ SKILL GAPS (Not grounded in evidence):")
+        for g in report.gaps:
+            typer.echo(f"  • {g.requirement_text}")
+        typer.echo("")
+
+
+app.command("gap")(evaluate_gap)
 
 
 @evaluate_app.command("export-packet")
