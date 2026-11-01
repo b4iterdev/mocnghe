@@ -75,8 +75,14 @@ def review(ctx: typer.Context, cv_id: str):
 @guarded
 def list_cvs(ctx: typer.Context):
     s = service(ctx)
+    ids: list[str] = []
     with s.repo.connect() as db:
         ids = [r[0] for r in db.execute("SELECT id FROM cv_revisions ORDER BY rowid")]
+    if s.cvs_dir.exists():
+        file_ids = [p.stem for p in sorted(s.cvs_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime) if not p.name.endswith(".approval.yaml")]
+        for fid in file_ids:
+            if fid not in ids:
+                ids.append(fid)
     typer.echo(json.dumps(ids))
 
 

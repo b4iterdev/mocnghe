@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated, cast
 
 import typer
+import yaml
 from pydantic import ValidationError
 
 from .cover_letter_cli import cover_letter_app
@@ -310,16 +311,32 @@ def _echo_source_result(result: SourceResult) -> None:
         typer.echo(f"job: {job.job_id} {job.title} | {job.employer} | {job.location}")
 
 
+def _load_workspace_profile_data(repository: CareerRepository) -> tuple[Path, object]:
+    profile_path = repository.get_profile_source_path()
+    if profile_path is None:
+        raise FileNotFoundError("No profile found. Add a local profile.yaml (or profile.json) in the workspace when ready.")
+    raw = profile_path.read_text(encoding="utf-8")
+    if profile_path.suffix in (".yaml", ".yml"):
+        data = yaml.safe_load(raw)
+    else:
+        data = json.loads(raw)
+    return profile_path, cast(object, data)
+
+
 @profile_app.command("validation")
 def profile_validation(ctx: typer.Context) -> None:
     repository = repository_from_context(ctx)
     repository.initialize()
-    profile_path = repository.workspace / "profile.json"
-    if not profile_path.exists():
+    try:
+        _, profile_data = _load_workspace_profile_data(repository)
+    except FileNotFoundError:
         typer.echo("No profile found. Add a local profile.json in the workspace when ready.")
         return
+    except Exception as error:
+        typer.echo("profile: invalid", err=True)
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
     try:
-        profile_data = cast(object, json.loads(profile_path.read_text(encoding="utf-8")))
         profile = CandidateProfile.model_validate(profile_data)
     except (json.JSONDecodeError, ValidationError) as error:
         typer.echo("profile: invalid", err=True)
@@ -398,17 +415,21 @@ def profile_confirm_file(
     ctx: typer.Context,
     author: Annotated[str, typer.Option("--author", help="Who confirmed")] = "candidate",
 ) -> None:
-    """Read workspace profile.json, set confirmed_at, and save to the DB."""
+    """Read workspace profile.yaml or profile.json, set confirmed_at, and save to storage."""
     from datetime import datetime
 
     repository = repository_from_context(ctx)
     repository.initialize()
-    profile_path = repository.workspace / "profile.json"
-    if not profile_path.exists():
-        typer.echo("No profile.json found in workspace.", err=True)
-        raise typer.Exit(1)
     try:
-        profile_data = cast(object, json.loads(profile_path.read_text(encoding="utf-8")))
+        _, profile_data = _load_workspace_profile_data(repository)
+    except FileNotFoundError:
+        typer.echo("No profile.json or profile.yaml found in workspace.", err=True)
+        raise typer.Exit(1)
+    except Exception as error:
+        typer.echo("profile: invalid", err=True)
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    try:
         profile = CandidateProfile.model_validate(profile_data)
     except (json.JSONDecodeError, ValidationError) as error:
         typer.echo("profile: invalid", err=True)

@@ -2,6 +2,9 @@
 import hashlib
 import json
 from datetime import UTC, datetime
+from typing import Any
+
+import yaml
 
 from ..cv import CVService, digest
 from ..models.application import ApplicationState
@@ -22,6 +25,8 @@ TRANSITIONS = {
 class ApplicationTracker:
     def __init__(self, repo):
         self.repo = repo
+        self.applications_dir = repo.workspace / "applications"
+        self.pipeline_file = repo.workspace / "pipeline.md"
         repo.initialize()
         with repo.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -124,4 +129,70 @@ class ApplicationTracker:
             db.execute("INSERT INTO application_events(job_id, from_state, to_state, recorded_at) "
                        "VALUES (?, ?, ?, ?)",
                        (job_id, row["state"], state, datetime.now(UTC).isoformat()))
-        return self.get(job_id)
+
+        # Sync to YAML file
+        self.applications_dir.mkdir(parents=True, exist_ok=True)
+        yaml_file = self.applications_dir / f"{job_id}.yaml"
+        current_row = self.get(job_id)
+        events = self.history(job_id)
+        app_data = {
+            "job_id": job_id,
+            "state": current_row["state"],
+            "cv_version": current_row.get("cv_version"),
+            "jd_content_hash": current_row.get("jd_content_hash"),
+            "applied_at": current_row.get("applied_at"),
+            "created_at": current_row.get("created_at"),
+            "events": [
+                {
+                    "from_state": ev["from_state"],
+                    "to_state": ev["to_state"],
+                    "recorded_at": ev["recorded_at"],
+                }
+                for ev in events
+            ],
+        }
+        yaml_file.write_text(yaml.safe_dump(app_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        self._write_pipeline_md()
+
+        return current_row
+
+    def _write_pipeline_md(self) -> None:
+        all_apps = self.list()
+        states_order = [
+            "discovered",
+            "shortlisted",
+            "drafting",
+            "ready",
+            "applied",
+            "interviewing",
+            "offer",
+            "rejected",
+            "withdrawn",
+            "archived",
+        ]
+        lines = [
+            "# Application Pipeline",
+            f"*Updated at {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}*",
+            "",
+        ]
+        apps_by_state: dict[str, list[dict[str, Any]]] = {st: [] for st in states_order}
+        for app in all_apps:
+            st = str(app["state"])
+            if st in apps_by_state:
+                apps_by_state[st].append(app)
+
+        for st in states_order:
+            items = apps_by_state[st]
+            lines.append(f"## {st.title()} ({len(items)})")
+            if not items:
+                lines.append("*(none)*")
+            else:
+                for item in items:
+                    job = self.repo.get_job(str(item["job_id"]))
+                    title = job.title if job else "Unknown Title"
+                    employer = job.employer if job else "Unknown Employer"
+                    cv_info = f" [CV: {item['cv_version']}]" if item.get("cv_version") else ""
+                    lines.append(f"- **{title}** at {employer} (`{item['job_id']}`){cv_info}")
+            lines.append("")
+
+        self.pipeline_file.write_text("\n".join(lines), encoding="utf-8")

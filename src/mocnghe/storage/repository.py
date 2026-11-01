@@ -1,9 +1,12 @@
 import hashlib
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+
+import yaml
+from pydantic import ValidationError
 
 from ..models.job import Job
 from ..models.profile import CandidateProfile
@@ -15,6 +18,12 @@ class CareerRepository:
         # Stable on-disk name: rebranding must reuse existing workspaces, not fork them.
         self.database_path: Path = self.workspace / "careerviet.sqlite3"
         self.profile_path: Path = self.workspace / "profile.json"
+        self.drafts_dir: Path = self.workspace / "drafts"
+        self.profiles_dir: Path = self.workspace / "profiles"
+        self.reports_dir: Path = self.workspace / "reports"
+        self.applications_dir: Path = self.workspace / "applications"
+        self.pipeline_file: Path = self.workspace / "pipeline.md"
+        self.jobs_dir: Path = self.workspace / "jobs"
 
     def initialize(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -197,7 +206,112 @@ class CareerRepository:
                 "insert into applications (job_id, state, jd_content_hash) values (?, ?, ?)",
                 (job.job_id, "discovered", job.content_hash),
             )
-            return job, True
+        self.applications_dir.mkdir(parents=True, exist_ok=True)
+        app_file = self.applications_dir / f"{job.job_id}.yaml"
+        app_data = {
+            "job_id": job.job_id,
+            "state": "discovered",
+            "cv_version": None,
+            "jd_content_hash": job.content_hash,
+            "applied_at": None,
+            "created_at": datetime.now(UTC).isoformat(),
+            "events": [
+                {
+                    "from_state": "none",
+                    "to_state": "discovered",
+                    "recorded_at": datetime.now(UTC).isoformat(),
+                }
+            ],
+        }
+        app_file.write_text(yaml.safe_dump(app_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+        self.jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_md_file = self.jobs_dir / f"{job.job_id}.md"
+        job_md_file.write_text(self._render_job_markdown(job, raw_content), encoding="utf-8")
+
+        return job, True
+
+    def _render_job_markdown(self, job: Job, raw_content: str) -> str:
+        frontmatter = {
+            "job_id": job.job_id,
+            "content_hash": job.content_hash,
+            "title": job.title,
+            "employer": job.employer,
+            "location": job.location,
+            "workplace_policy": job.workplace_policy,
+            "employment_type": job.employment_type.value,
+            "salary": job.salary.model_dump(mode="json"),
+            "applied": job.applied,
+            "source": {
+                "source_id": job.source.source_id,
+                "source_kind": job.source.source_kind,
+                "original_uri": job.source.original_uri,
+                "original_url": str(job.source.original_url) if job.source.original_url else None,
+                "retrieved_at": job.source.retrieved_at.isoformat(),
+            },
+            "description": job.description,
+            "requirements": job.requirements,
+            "benefits": job.benefits,
+        }
+        lines = [
+            "---",
+            yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False).strip(),
+            "---",
+            "",
+            f"# {job.title} — {job.employer}",
+            "",
+            f"- **Location**: {job.location}",
+            f"- **Workplace Policy**: {job.workplace_policy}",
+            f"- **Employment Type**: {job.employment_type.value}",
+            f"- **Salary**: {job.salary.currency or ''} {job.salary.minimum or ''} - {job.salary.maximum or ''}".strip(),
+            "",
+            "## Description",
+            job.description or "*(No description)*",
+            "",
+            "## Requirements",
+            job.requirements or "*(No requirements)*",
+            "",
+            "## Benefits",
+            job.benefits or "*(No benefits)*",
+            "",
+        ]
+        if job.freeform_text and job.freeform_text not in (job.description, job.requirements):
+            lines.extend(["## Raw Freeform Text", job.freeform_text, ""])
+        return "\n".join(lines)
+
+    def _parse_job_markdown(self, path: Path) -> Job:
+        content = path.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            raise ValueError(f"Not a frontmatter markdown file: {path}")
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            raise ValueError(f"Malformed frontmatter in: {path}")
+        fm = yaml.safe_load(parts[1])
+        if not isinstance(fm, dict):
+            raise TypeError(f"Invalid YAML frontmatter in: {path}")
+        body = parts[2]
+
+        from ..models.job import EmploymentType, Salary, SourceProvenance
+
+        salary_data = fm.get("salary", {})
+        source_data = fm.get("source", {})
+
+        return Job(
+            job_id=str(fm["job_id"]),
+            content_hash=str(fm["content_hash"]),
+            source=SourceProvenance.model_validate(source_data),
+            title=str(fm["title"]),
+            employer=str(fm["employer"]),
+            location=str(fm["location"]),
+            workplace_policy=str(fm.get("workplace_policy", "unknown")),
+            employment_type=EmploymentType(str(fm.get("employment_type", "unknown"))),
+            salary=Salary.model_validate(salary_data),
+            description=str(fm.get("description", "")),
+            requirements=str(fm.get("requirements", "")),
+            benefits=str(fm.get("benefits", "")),
+            freeform_text=body.strip(),
+            applied=bool(fm.get("applied", False)),
+        )
 
     def list_jobs(self) -> list[Job]:
         with self.connect() as connection:
@@ -205,7 +319,17 @@ class CareerRepository:
                 list[sqlite3.Row],
                 connection.execute("select * from jobs order by created_at, job_id").fetchall(),
             )
-        return [self._job_from_row(row) for row in rows]
+        if rows:
+            return [self._job_from_row(row) for row in rows]
+        if self.jobs_dir.exists():
+            jobs = []
+            for md_file in sorted(self.jobs_dir.glob("*.md")):
+                try:
+                    jobs.append(self._parse_job_markdown(md_file))
+                except (yaml.YAMLError, ValidationError, OSError, ValueError):
+                    pass
+            return jobs
+        return []
 
     def get_job(self, job_id: str) -> Job | None:
         with self.connect() as connection:
@@ -213,9 +337,12 @@ class CareerRepository:
                 sqlite3.Row | None,
                 connection.execute("select * from jobs where job_id = ?", (job_id,)).fetchone(),
             )
-        if row is None:
-            return None
-        return self._job_from_row(row)
+        if row is not None:
+            return self._job_from_row(row)
+        md_file = self.jobs_dir / f"{job_id}.md"
+        if md_file.exists():
+            return self._parse_job_markdown(md_file)
+        return None
 
     def doctor(self) -> dict[str, str]:
         self.initialize()
@@ -230,6 +357,14 @@ class CareerRepository:
             draft_count = cast(int, draft_count_row[0])
             profile_count = cast(int, profile_count_row[0])
             report_count = cast(int, report_count_row[0])
+        job_file_count = len(list(self.jobs_dir.glob("*.md"))) if self.jobs_dir.exists() else 0
+        draft_file_count = len(list(self.drafts_dir.glob("*.yaml"))) if self.drafts_dir.exists() else 0
+        profile_file_count = len(list(self.profiles_dir.glob("*.yaml"))) if self.profiles_dir.exists() else 0
+        report_file_count = len(list(self.reports_dir.glob("*.yaml"))) if self.reports_dir.exists() else 0
+        job_count = max(job_count, job_file_count)
+        draft_count = max(draft_count, draft_file_count)
+        profile_count = max(profile_count, profile_file_count)
+        report_count = max(report_count, report_file_count)
         return {
             "database": "ok",
             "foreign_keys": "on" if foreign_keys == 1 else "off",
@@ -239,11 +374,76 @@ class CareerRepository:
             "evaluation_reports": str(report_count),
         }
 
+    def get_profile_source_path(self) -> Path | None:
+        for filename in ("profile.yaml", "profile.yml", "profile.json"):
+            path = self.workspace / filename
+            if path.exists():
+                return path
+        return None
+
     def profile_exists(self) -> bool:
-        return self.profile_path.exists()
+        return self.get_profile_source_path() is not None
+
+    def _render_profile_markdown(self, profile: CandidateProfile) -> str:
+        lines = [
+            "---",
+            f"profile_id: {profile.profile_id}",
+            f"version: {profile.version}",
+            f"confirmed_at: {profile.confirmed_at.isoformat() if profile.confirmed_at else 'null'}",
+            "---",
+            "",
+            f"# Candidate Profile: {profile.profile_id} ({profile.version})",
+            "",
+            "## Identity",
+        ]
+        if profile.identity:
+            for k, v in profile.identity.items():
+                lines.append(f"- **{k}**: {v}")
+        else:
+            lines.append("*(No identity details)*")
+        lines.append("")
+
+        lines.append("## Target Occupations")
+        if profile.ranked_targets:
+            for t in profile.ranked_targets:
+                lines.append(f"- Rank {t.rank}: **{t.title}** ({t.occupation_family})")
+        else:
+            lines.append("*(No targets specified)*")
+        lines.append("")
+
+        lines.append("## Experience")
+        if profile.experience:
+            for exp in profile.experience:
+                lines.append(f"- **{exp.title}** [{exp.engagement_type}] ({exp.start or '?'} to {exp.end or 'present'})")
+        else:
+            lines.append("*(No experience listed)*")
+        lines.append("")
+
+        lines.append("## Education")
+        if profile.education:
+            for edu in profile.education:
+                lines.append(f"- {edu}")
+        else:
+            lines.append("*(No education listed)*")
+        lines.append("")
+
+        lines.append("## Skills & Languages")
+        lines.append(f"- **Skills**: {', '.join(profile.skills) if profile.skills else 'None'}")
+        lines.append(f"- **Languages**: {', '.join(profile.languages) if profile.languages else 'None'}")
+        lines.append("")
+
+        lines.append("## Evidence Grounding")
+        for ev in profile.evidence:
+            quote = f' - "{ev.source_quote}"' if ev.source_quote else ""
+            lines.append(f"- `{ev.evidence_id}` [{ev.status.value if hasattr(ev.status, 'value') else ev.status}]: {ev.summary}{quote}")
+        lines.append("")
+        return "\n".join(lines)
 
     def save_profile_draft(self, draft_id: str, payload: dict[str, object]) -> None:
         self.initialize()
+        self.drafts_dir.mkdir(parents=True, exist_ok=True)
+        draft_file = self.drafts_dir / f"{draft_id}.yaml"
+        draft_file.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=True), encoding="utf-8")
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         with self.connect() as connection:
             _ = connection.execute(
@@ -259,6 +459,11 @@ class CareerRepository:
 
     def load_profile_draft(self, draft_id: str) -> dict[str, object] | None:
         self.initialize()
+        draft_file = self.drafts_dir / f"{draft_id}.yaml"
+        if draft_file.exists():
+            data = yaml.safe_load(draft_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return cast(dict[str, object], data)
         with self.connect() as connection:
             row = cast(
                 sqlite3.Row | None,
@@ -274,14 +479,27 @@ class CareerRepository:
         self.initialize()
         if profile.confirmed_at is None:
             raise ValueError("confirmed profile requires confirmed_at")
-        payload_json = profile.model_dump_json()
-        content_hash = hashlib.sha256(payload_json.encode()).hexdigest()
+        self.profiles_dir.mkdir(parents=True, exist_ok=True)
+        yaml_file = self.profiles_dir / f"{profile.version}.yaml"
+        if yaml_file.exists():
+            raise ValueError("confirmed profile versions are immutable")
+
         with self.connect() as connection:
             existing = connection.execute(
                 "select version from profiles where version = ?", (profile.version,)
             ).fetchone()
             if existing is not None:
                 raise ValueError("confirmed profile versions are immutable")
+
+        payload_dict = profile.model_dump(mode="json")
+        yaml_file.write_text(yaml.safe_dump(payload_dict, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+        md_file = self.profiles_dir / f"{profile.version}.md"
+        md_file.write_text(self._render_profile_markdown(profile), encoding="utf-8")
+
+        payload_json = profile.model_dump_json()
+        content_hash = hashlib.sha256(payload_json.encode()).hexdigest()
+        with self.connect() as connection:
             _ = connection.execute(
                 """
                 insert into profiles (profile_id, version, payload_json, content_hash, confirmed_at)
@@ -303,9 +521,14 @@ class CareerRepository:
                 sqlite3.Row | None,
                 connection.execute("select payload_json from profiles where version = ?", (version,)).fetchone(),
             )
-        if row is None:
-            return None
-        return CandidateProfile.model_validate_json(cast(str, row["payload_json"]))
+        if row is not None:
+            return CandidateProfile.model_validate_json(cast(str, row["payload_json"]))
+        yaml_file = self.profiles_dir / f"{version}.yaml"
+        if yaml_file.exists():
+            data = yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return CandidateProfile.model_validate(data)
+        return None
 
     def get_latest_profile(self) -> CandidateProfile | None:
         self.initialize()
@@ -316,9 +539,60 @@ class CareerRepository:
                     "select payload_json from profiles order by created_at desc, version desc limit 1"
                 ).fetchone(),
             )
-        if row is None:
-            return None
-        return CandidateProfile.model_validate_json(cast(str, row["payload_json"]))
+        if row is not None:
+            return CandidateProfile.model_validate_json(cast(str, row["payload_json"]))
+        if self.profiles_dir.exists():
+            yaml_files = sorted(self.profiles_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for f in yaml_files:
+                try:
+                    data = yaml.safe_load(f.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        return CandidateProfile.model_validate(data)
+                except (yaml.YAMLError, ValidationError, OSError):
+                    pass
+        return None
+
+    def _render_evaluation_report_markdown(
+        self,
+        *,
+        report_id: str,
+        profile_version: str,
+        job_id: str,
+        jd_content_hash: str,
+        runtime: str,
+        model: str,
+        data: dict[str, object],
+    ) -> str:
+        lines = [
+            "---",
+            f"report_id: {report_id}",
+            f"profile_version: {profile_version}",
+            f"job_id: {job_id}",
+            f"jd_content_hash: {jd_content_hash}",
+            f"runtime: {runtime}",
+            f"model: {model}",
+            "---",
+            "",
+            f"# Evaluation Report: {report_id}",
+            "",
+            f"- **Target Job ID**: {job_id}",
+            f"- **Profile Version**: {profile_version}",
+            f"- **Model**: {model} ({runtime})",
+            "",
+        ]
+        if "recommendation" in data:
+            lines.append(f"## Recommendation: {str(data['recommendation']).upper()}")
+            lines.append("")
+        if "fit_summary" in data:
+            lines.append("## Fit Summary")
+            lines.append(str(data["fit_summary"]))
+            lines.append("")
+        if "findings" in data and isinstance(data["findings"], list):
+            lines.append("## Findings")
+            for f in data["findings"]:
+                lines.append(f"- {f}")
+            lines.append("")
+        return "\n".join(lines)
 
     def save_evaluation_report(
         self,
@@ -332,6 +606,35 @@ class CareerRepository:
         payload_json: str,
     ) -> None:
         self.initialize()
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            parsed = json.loads(payload_json)
+            if isinstance(parsed, dict):
+                data: dict[str, object] = {str(k): v for k, v in parsed.items()}
+            else:
+                data = {"raw_payload": parsed}
+        except (json.JSONDecodeError, TypeError):
+            data = {"raw_payload": payload_json}
+
+        # Save YAML
+        yaml_file = self.reports_dir / f"{report_id}.yaml"
+        yaml_file.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+        # Save Markdown
+        md_file = self.reports_dir / f"{report_id}.md"
+        md_file.write_text(
+            self._render_evaluation_report_markdown(
+                report_id=report_id,
+                profile_version=profile_version,
+                job_id=job_id,
+                jd_content_hash=jd_content_hash,
+                runtime=runtime,
+                model=model,
+                data=data,
+            ),
+            encoding="utf-8",
+        )
+
         with self.connect() as connection:
             _ = connection.execute(
                 """
@@ -344,12 +647,14 @@ class CareerRepository:
 
     def count_evaluation_reports(self) -> int:
         self.initialize()
+        file_count = len(list(self.reports_dir.glob("*.yaml"))) if self.reports_dir.exists() else 0
         with self.connect() as connection:
             row = cast(
                 sqlite3.Row,
                 connection.execute("select count(*) from evaluation_reports").fetchone(),
             )
-        return cast(int, row[0])
+        db_count = cast(int, row[0])
+        return max(db_count, file_count)
 
     def _job_from_row(self, row: sqlite3.Row) -> Job:
         from ..models.job import EmploymentType, Salary, SourceProvenance

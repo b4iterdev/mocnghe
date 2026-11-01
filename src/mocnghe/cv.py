@@ -1,9 +1,11 @@
 """Local, immutable CV revisions. Citations validate quotes, not rewritten semantics."""
 import hashlib
 import json
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .models.job import Job
@@ -84,6 +86,7 @@ class CV(BaseModel):
 class CVService:
     def __init__(self, repository: CareerRepository):
         self.repo = repository
+        self.cvs_dir = repository.workspace / "cvs"
         repository.initialize()
         with repository.connect() as db:
             db.execute("CREATE TABLE IF NOT EXISTS cv_revisions "
@@ -92,6 +95,36 @@ class CVService:
                        "(id TEXT PRIMARY KEY REFERENCES cv_revisions(id), hash TEXT NOT NULL)")
 
     content_hash = staticmethod(digest)
+
+    def _render_cv_markdown(self, cv: CV) -> str:
+        lines = [
+            "---",
+            f"id: {cv.id}",
+            f"profile_version: {cv.profile_version}",
+            f"language: {cv.language}",
+            f"job_id: {cv.job_id or 'null'}",
+            f"provenance: {cv.provenance}",
+            "---",
+            "",
+            "# Curriculum Vitae",
+            "",
+        ]
+        if cv.identity:
+            lines.append("## Contact Information")
+            for k, v in cv.identity.items():
+                lines.append(f"- **{k.title()}**: {v}")
+            lines.append("")
+
+        sections = ["experience", "education", "skills", "credentials", "other"]
+        for sec in sections:
+            sec_claims = [c for c in cv.claims if c.section == sec]
+            if sec_claims:
+                lines.append(f"## {sec.title()}")
+                for c in sec_claims:
+                    quote = f' (quote: "{c.source_quote}")' if c.source_quote != c.text else ""
+                    lines.append(f"- {c.text}{quote} <!-- [{c.evidence_id}: {c.status}] -->")
+                lines.append("")
+        return "\n".join(lines)
 
     def _profile(self, version):
         profile = self.repo.get_profile_version(version)
@@ -161,6 +194,11 @@ class CVService:
 
     def _save(self, cv):
         self.validate(cv)
+        self.cvs_dir.mkdir(parents=True, exist_ok=True)
+        yaml_path = self.cvs_dir / f"{cv.id}.yaml"
+        yaml_path.write_text(yaml.safe_dump(cv.model_dump(mode="json"), allow_unicode=True, sort_keys=False), encoding="utf-8")
+        md_path = self.cvs_dir / f"{cv.id}.md"
+        md_path.write_text(self._render_cv_markdown(cv), encoding="utf-8")
         with self.repo.connect() as db:
             db.execute("INSERT INTO cv_revisions VALUES (?, ?, ?)",
                        (cv.id, cv.model_dump_json(), digest(cv)))
@@ -168,11 +206,18 @@ class CVService:
     def get(self, cv_id):
         with self.repo.connect() as db:
             row = db.execute("SELECT payload, hash FROM cv_revisions WHERE id=?", (cv_id,)).fetchone()
-        if row is None:
-            raise ValueError("CV not found")
-        cv = CV.model_validate_json(row["payload"])
-        if cv.id != cv_id or digest(cv) != row["hash"]:
-            raise ValueError("CV content hash mismatch")
+        if row is not None:
+            cv = CV.model_validate_json(row["payload"])
+            if cv.id != cv_id or digest(cv) != row["hash"]:
+                raise ValueError("CV content hash mismatch")
+        else:
+            yaml_path = self.cvs_dir / f"{cv_id}.yaml"
+            if not yaml_path.exists():
+                raise ValueError("CV not found")
+            data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+            cv = CV.model_validate(data)
+            if cv.id != cv_id:
+                raise ValueError("CV content hash mismatch")
         self.validate(cv)
         return cv
 
@@ -188,6 +233,14 @@ class CVService:
         cv = self.get(cv_id)
         if digest(cv) != content_hash:
             raise ValueError("approval hash does not match reviewed content")
+        self.cvs_dir.mkdir(parents=True, exist_ok=True)
+        appr_path = self.cvs_dir / f"{cv_id}.approval.yaml"
+        appr_data = {
+            "cv_id": cv_id,
+            "content_hash": content_hash,
+            "approved_at": datetime.now(UTC).isoformat(),
+        }
+        appr_path.write_text(yaml.safe_dump(appr_data, allow_unicode=True), encoding="utf-8")
         with self.repo.connect() as db:
             db.execute("INSERT OR REPLACE INTO cv_approvals VALUES (?, ?)", (cv_id, content_hash))
 
@@ -195,4 +248,10 @@ class CVService:
         cv = self.get(cv_id)
         with self.repo.connect() as db:
             row = db.execute("SELECT hash FROM cv_approvals WHERE id=?", (cv_id,)).fetchone()
-        return row is not None and row["hash"] == digest(cv)
+        if row is not None:
+            return row["hash"] == digest(cv)
+        appr_path = self.cvs_dir / f"{cv_id}.approval.yaml"
+        if appr_path.exists():
+            data = yaml.safe_load(appr_path.read_text(encoding="utf-8"))
+            return isinstance(data, dict) and data.get("content_hash") == digest(cv)
+        return False
