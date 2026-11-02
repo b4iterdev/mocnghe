@@ -55,8 +55,8 @@ def run_batch_crawl(
     timeout_seconds: float = 15.0,
 ) -> BatchScanReport:
     """
-    Perform polite, bounded batch crawl across target URLs.
-    Deduplicates jobs in SQLite and captures failures without terminating batch.
+    Batch-crawls JD URLs sequentially with polite delay.
+    Deduplicates jobs via local files and captures failures without terminating batch.
     """
     repository.initialize()
     report = BatchScanReport(total=len(urls))

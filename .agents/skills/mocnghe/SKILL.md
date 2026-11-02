@@ -50,11 +50,13 @@ Xác nhận hoặc cập nhật hồ sơ ứng viên từ `profile.json`:
    ```bash
    uv run mocnghe [--workspace <path>] profile validation
    ```
-2. Xác nhận và lưu vào CSDL SQLite:
+2. Xác nhận và lưu trữ bất biến (Markdown & YAML):
    ```bash
    uv run mocnghe [--workspace <path>] profile confirm-file
    ```
 - **Lưu ý quan trọng (Pitfall):** Các phiên bản profile đã confirmed là bất biến (`ValueError: confirmed profile versions are immutable`). Phải tăng trường `version` trong `profile.json` (ví dụ `1.0` -> `1.1` hoặc timestamp) trước khi chạy `confirm-file` khi cập nhật hồ sơ đã tồn tại.
+
+- **Kiến trúc lưu trữ tệp thuần túy (Pure File-Based):** Toàn bộ dữ liệu hồ sơ, tin tuyển dụng, đơn ứng tuyển, báo cáo lưu trữ trực tiếp dưới dạng `.md` và `.yaml` trong workspace (`data/`). Không còn phụ thuộc CSDL SQLite (`careerviet.sqlite3`). Concurrency kiểm soát bằng file-lock OS (`.lock`).
 
 ### 5. `/triage <job_id>` hoặc `/mocnghe-triage <job_id>`
 Đánh giá độ phù hợp (triage) giữa hồ sơ ứng viên và JD:

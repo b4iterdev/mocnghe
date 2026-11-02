@@ -16,7 +16,7 @@ Use the user's selected workspace. Tracking is deterministic and does not need a
 6. Inspect `applications list --state STATE` or `applications history JOB_ID`.
 
 Changing a ready selection requires returning to drafting and selecting ready again. Stale CV/JD
-blocks confirmation; review fresh content. History is local SQLite, not a second Markdown ledger.
+blocks confirmation; review fresh content. History is local YAML events, not a second Markdown ledger.
 Submission time is the UTC time confirmation was recorded, not independently verified send time.
 No reminders, scheduler, email integration, multi-user service or automatic reapplications.
 Snapshots may contain selected personal information. Keep database and backups private; never

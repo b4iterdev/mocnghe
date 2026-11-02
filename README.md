@@ -8,7 +8,7 @@ Mốc Nghề là công cụ dòng lệnh (CLI) và bộ kỹ năng AI Agent hỗ
 
 ## ✨ Điểm Nổi Bật
 
-- 🔒 **Local-First & Bảo Mật Quyền Riêng Tư:** Toàn bộ dữ liệu hồ sơ, lịch sử nộp đơn lưu cục bộ trong CSDL SQLite (`careerviet.sqlite3`). Dữ liệu danh tính cá nhân không bị gửi lên mạng khi phân tích job.
+- 🔒 **Local-First & Bảo Mật Quyền Riêng Tư:** Toàn bộ dữ liệu hồ sơ, lịch sử nộp đơn lưu cục bộ trong thư mục tệp văn bản (`Markdown` và `YAML`). Không sử dụng CSDL đám mây hay tệp binary; dữ liệu danh tính cá nhân không bị gửi lên mạng khi phân tích job. Concurrency kiểm soát bằng file-lock hệ điều hành (`fcntl.flock`).
 - 🎯 **Grounded Evidence (Không Bịa Đặt):** Mọi kinh nghiệm, kỹ năng trên CV và Cover Letter đều phải xuất phát từ bằng chứng thực tế đã xác nhận (`CandidateEvidence`). Tuyệt đối không sinh số liệu ảo (hallucination).
 - 🎨 **Render Đẹp & Chuẩn ATS:** Hỗ trợ cả 2 engine xuất PDF:
   - `--engine modern`: Giao diện hiện đại (HTML/CSS + Playwright) với dải màu gradient, thẻ năng lực trực quan (phong cách tương tự *career-ops*).
