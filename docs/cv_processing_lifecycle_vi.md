@@ -27,7 +27,7 @@ Tài liệu này giải thích chi tiết cơ chế hoạt động bên trong c�
    - Kiểm định chéo: mọi fact phải trỏ về evidence có thật
    - Đóng dấu thời gian confirmed_at (UTC)
    - Tính mã băm SHA-256 (profile_content_hash)
-   - Ghi vào bảng `profiles` trong SQLite (Bất biến, không thể sửa đổi)
+   - Ghi vào tệp `profiles/{version}.md` và `.yaml` (Bất biến, không thể sửa đổi)
             |
             v
 [ BƯỚC 4: May đo theo Tin Tuyển dụng Cụ thể (CV Tailoring) ]
@@ -76,7 +76,7 @@ Tài liệu này giải thích chi tiết cơ chế hoạt động bên trong c�
   2. Xác minh tính toàn vẹn: Không cho phép duplicate `evidence_id`, từ chối lưu nếu có fact trỏ tới `evidence_id` không tồn tại.
   3. Gán thời gian xác nhận chuẩn UTC (`confirmed_at = datetime.now(UTC)`).
   4. Tính toán mã băm SHA-256 trên toàn bộ dữ liệu.
-  5. Ghi vào bảng `profiles` trong database SQLite (`careerviet.sqlite3`).
+  5. Ghi vào tệp bất biến `data/profiles/{version}.yaml` và `{version}.md`.
   - **Đặc tính:** Phiên bản hồ sơ này trở thành **bất biến (immutable)**. Không ai có thể sửa đè lên bản ghi này mà không tăng số version.
 
 ### Bước 4: May đo CV theo Tin tuyển dụng (`cv create` & `cv revise`)

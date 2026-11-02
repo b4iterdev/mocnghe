@@ -1,4 +1,4 @@
-# Luồng Thu Thập & Xử Lý Tin Tuyển Dụng: Từ Đường Dẫn Web Đến SQLite
+# Luồng Thu Thập & Xử Lý Tin Tuyển Dụng: Từ Đường Dẫn Web Đến Tệp Lưu Trữ Cục Bộ
 
 Tài liệu này giải thích chi tiết các bước xảy ra bên trong khi người dùng hoặc AI Agent đưa vào một đường dẫn tuyển dụng (Job URL): hệ thống chọn bộ điều hợp nào, cơ chế vượt qua các trang web động (JavaScript/SPA) ra sao, cách chuẩn hóa dữ liệu, và quy trình khử trùng lặp trong cơ sở dữ liệu cục bộ.
 
@@ -80,5 +80,5 @@ Mỗi adapter áp dụng chiến lược riêng để lấy thông tin sạch nh
 - `job_id` được đặt tên theo quy tắc: `job_<16 hex đầu>`. Điều này đảm bảo tính nhất quán tuyệt đối giữa các lần quét.
 
 ### Bước 5: Lưu Trữ Cục Bộ & Khử Trùng Lặp
-- Dữ liệu được ghi vào bảng `jobs` trong SQLite cục bộ (`careerviet.sqlite3`).
+- Dữ liệu được ghi vào tệp Markdown cục bộ (`data/jobs/{job_id}.md`) và liên kết vào `data/applications/{job_id}.yaml`.
 - Trường `source_identity` (chính là URL) đảm bảo rằng nếu bạn crawl lại một tin tuyển dụng nhiều lần, hệ thống sẽ tự động cập nhật bản ghi hiện có (`existing`) thay vì sinh ra nhiều bản sao trùng lặp.

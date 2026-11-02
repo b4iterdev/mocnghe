@@ -80,5 +80,5 @@ Adapters apply targeted strategies to acquire clean content:
 - `job_id` is assigned as `job_<first 16 chars>`.
 
 ### Step 5: Local Persistence & Deduplication
-- Records are committed to SQLite (`careerviet.sqlite3`).
+- Records are committed to local Markdown storage (`data/jobs/{job_id}.md`) and linked in `data/applications/{job_id}.yaml`.
 - The `source_identity` column guarantees that re-crawling the same job URL updates existing entries (`existing`) rather than polluting the workspace with duplicates.

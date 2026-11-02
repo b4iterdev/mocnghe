@@ -9,7 +9,7 @@ Tài liệu này được thiết kế để con người (lập trình viên, n
 ## 1. Triết lý Thiết kế Cốt lõi (Design Principles)
 
 1. **Local-First & Quyền riêng tư:**
-   - Dữ liệu ứng viên, lịch sử nộp đơn, và hồ sơ được lưu hoàn toàn trên máy cục bộ (`SQLite`).
+   - Dữ liệu ứng viên, lịch sử nộp đơn, và hồ sơ được lưu hoàn toàn trên máy cục bộ (pure Markdown & YAML).
    - Không tự động gửi email hay submit form. Người dùng giữ quyền kiểm soát tối thượng (`human-controlled submissions`).
 2. **Evidence-Grounded (Có dẫn chứng thực tế):**
    - Mọi thông tin trên CV hoặc bản giải trình đều phải bắt nguồn từ bằng chứng có thật (`CandidateEvidence`).
@@ -44,9 +44,9 @@ Tài liệu này được thiết kế để con người (lập trình viên, n
                                                             |
                                                             v
                                             +-------------------------------+
-                                            |   Cơ sở Dữ liệu Cục bộ (DB)   |
-                                            |   - SQLite (careerviet.sqlite3)
-                                            |   - SHA-256 Content Validation|
+                                            |   Phân hệ Lưu trữ Cục bộ      |
+                                            |   - Pure Markdown & YAML Files|
+                                            |   - Kiểm tra Toàn vẹn SHA-256 |
                                             +-------------------------------+
 ```
 
@@ -56,7 +56,7 @@ Tài liệu này được thiết kế để con người (lập trình viên, n
 - 🌐 [Luồng Thu thập & Xử lý JD](job_crawling_lifecycle_vi.md) — Cơ chế chọn adapter, bóc tách cấu trúc và khử trùng lặp dữ liệu tuyển dụng.
 - 🎯 [Luồng Đánh giá & Theo dõi Đơn](application_tracking_lifecycle_vi.md) — Chi tiết triage, tạo draft form và máy trạng thái nộp đơn an toàn.
 - 🖥️ [User & AI Agent Surface](internals/surface_vi.md) — Kiến trúc Typer CLI, lớp điều phối Agent Skills, Slash Commands và hàng rào an toàn chống prompt injection.
-- 💾 [Local Database & Storage](internals/storage_vi.md) — Lược đồ quan hệ SQLite, tính tương thích ngược, kiểm tra băm SHA-256 chống giả mạo và chẩn đoán integrity.
+- 💾 [Lưu trữ & Dữ liệu Cục bộ](internals/storage_vi.md) — Kiến trúc lưu trữ dạng tệp thuần túy (YAML/Markdown), kiểm tra băm SHA-256 chống giả mạo, khóa file OS và chẩn đoán integrity.
 - 🌐 [Ingestion & Web Crawlers](internals/ingestion_vi.md) — Cơ chế hoạt động của Adapter, headless Playwright và băm định danh.
 - 👤 [Profile & Grounded Evidence](internals/profile_vi.md) — Mô hình bằng chứng nguyên tử, tính bất biến và xác thực sự thật.
 - 🎯 [Triage & Evaluation](internals/evaluation_vi.md) — Trích xuất gạch đầu dòng tự động, screening offline và giao thức AI Agent an toàn.
@@ -172,7 +172,7 @@ mocnghe/
 │   │   ├── profile.py         # CandidateProfile, Evidence, Facts
 │   │   └── cv.py              # Claim, CV Revision, Validation
 │   ├── storage/
-│   │   └── repository.py      # SQLite repository + content hash
+│   │   └── repository.py      # Flat-file repository + content hash
 │   ├── cv_render.py           # Bộ render PDF chuẩn A4 (ReportLab)
 │   ├── evaluation_runtime.py  # Trích xuất yêu cầu & Triage logic
 │   └── cli.py                 # Điểm vào dòng lệnh Typer CLI

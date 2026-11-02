@@ -1,82 +1,85 @@
-# Local Database & Storage Subsystem (Phân hệ Lưu trữ Dữ liệu Cục bộ)
+# Local Storage Subsystem (Phân hệ Lưu trữ Dữ liệu Cục bộ)
 
-Phân hệ lưu trữ của Mốc Nghề được hiện thực hóa qua lớp `CareerRepository` (`storage/repository.py`), sử dụng **SQLite 3** độc lập nằm trong từng workspace (`careerviet.sqlite3`). Toàn bộ hoạt động đều hướng tới tính toàn vẹn dữ liệu, kiểm tra băm SHA-256 chống can thiệp trái phép và hỗ trợ khôi phục dễ dàng.
+Phân hệ lưu trữ của Mốc Nghề được hiện thực hóa qua lớp `CareerRepository` (`storage/repository.py`), sử dụng **Pure File-Based Storage** độc lập nằm trong từng workspace (mặc định là `data/`). Toàn bộ dữ liệu được lưu dưới dạng văn bản tĩnh (Markdown, YAML, JSON), kiểm tra băm SHA-256 chống can thiệp trái phép, kiểm soát tranh chấp đồng thời bằng file-lock hệ điều hành (`fcntl.flock`), và thân thiện 100% với Git tracking.
 
 ---
 
-## 1. Kiến trúc Bảng Dữ liệu (Database Schema)
+## 1. Cấu trúc Thư mục Workspace (Workspace Layout)
 
 ```
-+---------------------------------------------------------------------------------------------------+
-|                                      careerviet.sqlite3 (SQLite)                                   |
-+---------------------------------------------------------------------------------------------------+
-|                                                                                                   |
-|  [ jobs ]                                        [ profiles ]                                     |
-|  - job_id (PK, text)                             - profile_id (PK, text)                          |
-|  - source_id (text)                              - version (PK, text)                             |
-|  - title, employer, location (text)              - payload_json (text)                            |
-|  - description, requirements, benefits (text)    - content_hash (text, SHA-256)                   |
-|  - freeform_text (text)                          - confirmed_at (text, ISO UTC)                   |
-|  - content_hash (text, SHA-256)                  |                                                |
-|  - applied (boolean)                             |                                                |
-|                                                  |                                                |
-|  [ profile_drafts ]                              [ evaluation_reports ]                           |
-|  - draft_id (PK, text)                           - report_id (PK, text)                           |
-|  - payload_json (text)                           - profile_version, job_id (text)                 |
-|  - updated_at (text)                             - jd_content_hash (text)                         |
-|                                                  - runtime, model, payload_json (text)            |
-|                                                                                                   |
-|  [ cv_revisions ]                                [ cv_approvals ]                                 |
-|  - id (PK, text)                                 - id (PK, FK -> cv_revisions.id)                 |
-|  - payload (text, JSON)                          - hash (text, SHA-256)                           |
-|  - hash (text, SHA-256)                                                                           |
-|                                                                                                   |
-|  [ application_drafts ]                          [ application_draft_approvals ]                  |
-|  - id (PK, text)                                 - id (PK, FK -> application_drafts.id)           |
-|  - payload (text, JSON)                          - hash (text, SHA-256)                           |
-|  - hash (text, SHA-256)                                                                           |
-|                                                                                                   |
-|  [ applications ]                                [ application_events ]                           |
-|  - application_id (PK, int auto)                 - event_id (PK, int auto)                        |
-|  - job_id (FK -> jobs.job_id)                    - application_id (FK -> applications)            |
-|  - state (text, CHECK state IN (...))            - from_state, to_state (text)                    |
-|  - cv_version (text)                             - created_at, note (text)                        |
-|  - submission_json (text, snapshot)             - submission_hash (text)                         |
-|  - submission_hash (text, SHA-256)                                                                |
-+---------------------------------------------------------------------------------------------------+
+workspace/
+├── .lock                          # Khóa tranh chấp đồng thời (fcntl.flock)
+├── pipeline.md                    # Bảng theo dõi tiến trình tuyển dụng (Kanban board)
+├── profile.json                   # Hồ sơ ứng viên nguồn
+├── profiles/                      # Snapshot hồ sơ bất biến
+│   ├── {version}.md               # Bản Markdown dễ đọc
+│   └── {version}.yaml             # Schema Pydantic kèm fingerprint _hash
+├── jobs/                          # Tin tuyển dụng đã thu thập
+│   └── {job_id}.md                # YAML frontmatter + nội dung chi tiết JD
+├── applications/                  # Tiến trình và audit trail nộp đơn
+│   └── {job_id}.yaml              # State, CV version, snapshot, lịch sử events
+├── cvs/                           # Bản may đo CV và phê duyệt
+│   ├── {cv_id}.md                 # Bản CV định dạng Markdown
+│   ├── {cv_id}.yaml               # Schema claims kèm _hash
+│   └── {cv_id}.approval.yaml      # Bằng chứng phê duyệt của ứng viên (SHA-256)
+├── cover_letters/                 # Thư xin việc
+│   ├── {cl_id}.yaml               # Schema cover letter kèm _hash
+│   └── {cl_id}.approval.yaml      # Phê duyệt thư xin việc
+├── drafts/                        # Bản nháp biểu mẫu ứng tuyển
+│   ├── {draft_id}.yaml            # Bản nháp form/email
+│   └── {draft_id}.approval.yaml   # Phê duyệt bản nháp
+├── reports/                       # Báo cáo đánh giá (Triage & Matching)
+│   ├── {report_id}.md             # Báo cáo Markdown
+│   └── {report_id}.yaml           # Dữ liệu đánh giá có cấu trúc
+└── observations/                  # Lịch sử quan sát nguồn JD
+    └── {job_id}.json              # Dữ liệu raw_content và URL gốc
 ```
 
 ---
 
-## 2. Tính Tương thích Lưu trữ & Tên File Bất biến
+## 2. Tính Tương thích Lưu trữ & Triết lý Git-friendly
 
-- **Tên File SQLite Bất biến (`careerviet.sqlite3`):**
-  Mặc dù dự án đã đổi tên thành **Mốc Nghề** (`mocnghe`), tên tệp cơ sở dữ liệu vật lý vẫn được cố ý giữ nguyên là `careerviet.sqlite3`.
-  - **Lý do:** Tránh việc người dùng sau khi nâng cấp bị mở một database mới hoàn toàn trống rỗng, bảo vệ an toàn toàn bộ dữ liệu tuyển dụng đã lưu trong quá khứ.
+- **Không còn phụ thuộc binary SQLite:**
+  Trước đây dự án sử dụng `careerviet.sqlite3`. Hiện tại, toàn bộ dữ liệu đã chuyển dịch hoàn toàn sang tệp văn bản thuần túy (`.md` và `.yaml`).
+  - **Lợi ích:** Người dùng có thể dễ dàng kiểm tra lịch sử qua Git (`git diff`, `git log`), sao lưu qua đám mây riêng hoặc chỉnh sửa trực tiếp mà không gặp rủi ro hỏng cơ sở dữ liệu binary.
 - **Tính Độc lập của Workspace:**
-  Mỗi thư mục workspace (mặc định là `data/`, hoặc chỉ định qua `--workspace <path>`) chứa cơ sở dữ liệu riêng biệt. Người dùng có thể sao lưu, di chuyển hoặc nén thư mục workspace mà không phụ thuộc vào dịch vụ máy chủ bên ngoài.
+  Mỗi thư mục workspace (mặc định là `data/`, hoặc chỉ định qua `--workspace <path>`) chứa toàn bộ trạng thái riêng biệt. Người dùng có thể sao lưu, di chuyển hoặc nén thư mục workspace mà không phụ thuộc vào bất kỳ dịch vụ máy chủ bên ngoài nào.
 
 ---
 
 ## 3. Cơ chế Khóa và Kiểm tra Băm (Audit & Tamper Detection)
 
 ### 3.1. Xác thực Mã băm khi Đọc (`digest` check)
-Khi truy vấn một bản thảo CV từ bảng `cv_revisions`:
+Khi truy vấn một bản thảo CV từ tệp `cvs/{cv_id}.yaml`:
 ```python
-row = db.execute("SELECT payload, hash FROM cv_revisions WHERE id=?", (cv_id,)).fetchone()
-cv = CV.model_validate_json(row["payload"])
-if digest(cv) != row["hash"]:
+data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+stored_hash = data.pop("_hash", None)
+cv = CV.model_validate(data)
+if stored_hash is not None and digest(cv) != stored_hash:
     raise ValueError("CV content hash mismatch")
 ```
-Nếu có ai đó (hoặc một tiến trình bên ngoài) trực tiếp can thiệp và sửa nội dung cột `payload` trong SQLite, hàm tính toán lại mã băm `digest(cv)` sẽ không khớp với cột `hash`, hệ thống lập tức từ chối xử lý và ném lỗi vi phạm toàn vẹn.
+Nếu có ai đó (hoặc một tiến trình bên ngoài) trực tiếp can thiệp và sửa nội dung claim trong file YAML mà không qua luồng phê duyệt, hàm tính toán lại mã băm `digest(cv)` sẽ không khớp với `stored_hash`, hệ thống lập tức từ chối xử lý và ném lỗi vi phạm toàn vẹn.
 
 ### 3.2. Tính Bất biến của Phiên bản Hồ sơ (`profiles`)
 Khi lưu hồ sơ chính thức qua `save_confirmed_profile()`:
-- Câu lệnh `INSERT` kiểm tra trùng lặp phiên bản. Nếu cùng một `version` được ghi nhận lần thứ hai, hệ thống ném ngoại lệ `confirmed profile versions are immutable`.
-- Hồ sơ một khi đã xác nhận thì không thể sửa; muốn cập nhật bắt buộc phải tăng số phiên bản.
+- Hệ thống kiểm tra sự tồn tại của tệp `profiles/{version}.yaml`. Nếu cùng một `version` đã tồn tại, hệ thống ném ngoại lệ `confirmed profile versions are immutable`.
+- Hồ sơ một khi đã xác nhận thì không thể sửa đè; muốn cập nhật bắt buộc phải tăng số phiên bản.
 
-### 3.3. Tự chẩn đoán Cơ sở Dữ liệu (`mocnghe doctor`)
+### 3.3. Kiểm soát Tranh chấp Đồng thời (Concurrency Locking)
+Thay vì dùng transaction khóa bảng SQLite, Mốc Nghề sử dụng khóa tệp OS qua `fcntl.flock` trên tệp `.lock`:
+```python
+@contextmanager
+def lock(self):
+    self.initialize()
+    with open(self.lock_file, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+```
+
+### 3.4. Tự chẩn đoán Workspace (`mocnghe doctor`)
 Hàm `doctor()` trong `CareerRepository` thực hiện:
-- Kiểm tra tính toàn vẹn của tệp SQLite (`PRAGMA integrity_check`).
-- Kiểm tra tính hợp lệ của các ràng buộc khóa ngoại (`PRAGMA foreign_key_check`).
-- Báo cáo số lượng bản ghi tin tuyển dụng và hồ sơ đang quản lý.
+- Kiểm tra tính hợp lệ và cấu trúc các thư mục con trong workspace.
+- Đếm số lượng tin tuyển dụng, hồ sơ, đơn ứng tuyển và báo cáo đang quản lý trên đĩa.

@@ -27,7 +27,7 @@ This document provides a comprehensive breakdown of the internal pipeline trigge
    - Integrity audit: every fact must map to existing evidence
    - Stamping confirmed_at in UTC
    - Computing SHA-256 fingerprint (profile_content_hash)
-   - Persisting to SQLite `profiles` table (Immutable record)
+   - Persisting to `profiles/{version}.md` and `.yaml` (Immutable record)
             |
             v
 [ STEP 4: Target-Specific Tailoring (CV Tailoring) ]
@@ -76,7 +76,7 @@ This document provides a comprehensive breakdown of the internal pipeline trigge
   2. Integrity audit: Prohibits duplicate `evidence_id` keys and rejects facts citing missing evidence.
   3. Stamps canonical UTC timestamp (`confirmed_at = datetime.now(UTC)`).
   4. Calculates SHA-256 fingerprint over the payload.
-  5. Inserts into the `profiles` table in SQLite (`careerviet.sqlite3`).
+  5. Saves into immutable workspace files `data/profiles/{version}.yaml` and `{version}.md`.
   - **Invariant:** The confirmed version becomes strictly **immutable**. Subsequent updates require incrementing the version string.
 
 ### Step 4: Target-Specific Tailoring (`cv create` & `cv revise`)

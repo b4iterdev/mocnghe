@@ -89,4 +89,4 @@ Khi một JD được nạp:
 1. Adapter tạo chuỗi văn bản hoàn chỉnh `freeform_text`.
 2. Hàm `hash_job_identity(freeform_text)` chuẩn hóa khoảng trắng và tính mã SHA-256 (64 ký tự hex).
 3. `job_id` được sinh ra tự động: `job_<16 ký tự đầu của SHA-256>`.
-4. Trong SQLite, bảng `jobs` sử dụng `source_identity` (chính là URL hoặc đường dẫn file) làm khóa duy nhất khi kích hoạt `dedupe_by_source_identity=True`. Nếu JD đã tồn tại, hệ thống cập nhật nội dung thay vì tạo bản ghi rác.
+4. Hệ thống sử dụng `source_identity` (chính là URL hoặc đường dẫn file) làm khóa duy nhất khi kích hoạt `dedupe_by_source_identity=True`. Nếu JD đã tồn tại, hệ thống cập nhật nội dung thay vì tạo bản ghi rác.

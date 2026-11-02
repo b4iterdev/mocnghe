@@ -9,7 +9,7 @@ This document is crafted for humans (developers, job seekers, and admins) to cle
 ## 1. Core Design Principles
 
 1. **Local-First & Data Privacy:**
-   - Candidate facts, application logs, and profile records remain strictly on local storage (`SQLite`).
+   - Candidate facts, application logs, and profile records remain strictly on local storage (pure Markdown & YAML).
    - No automatic emails or form submissions. The candidate retains ultimate authority (`human-controlled submissions`).
 2. **Evidence-Grounded:**
    - Every bullet or claim in a CV must trace directly to a verified record (`CandidateEvidence`).
@@ -44,8 +44,8 @@ This document is crafted for humans (developers, job seekers, and admins) to cle
                                                             |
                                                             v
                                             +-------------------------------+
-                                            |     Local Database (Storage)  |
-                                            |   - SQLite (careerviet.sqlite3)
+                                            |     Local Storage Subsystem   |
+                                            |   - Pure Markdown & YAML Files|
                                             |   - SHA-256 Content Validation|
                                             +-------------------------------+
 ```
@@ -56,7 +56,7 @@ To inspect source-level implementations and runtime lifecycles across each subsy
 - 🌐 [Job Ingestion Lifecycle](job_crawling_lifecycle_en.md) — Adapter selection, dynamic rendering, and deduplication mechanics.
 - 🎯 [Application Tracking Lifecycle](application_tracking_lifecycle_en.md) — Offline triage, form mapping, and audited application state transitions.
 - 🖥️ [User & AI Agent Surface](internals/surface_en.md) — Typer CLI architecture, Agent Skills dispatch layer, Slash Commands, and prompt injection guardrails.
-- 💾 [Local Database & Storage](internals/storage_en.md) — SQLite schema relational layout, backward compatibility, read-time SHA-256 tamper checks, and diagnostics.
+- 💾 [Local Database & Storage](internals/storage_en.md) — Pure file-based workspace storage, YAML/Markdown layout, read-time SHA-256 tamper checks, OS file locking, and diagnostics.
 - 🌐 [Ingestion & Web Crawlers](internals/ingestion_en.md) — Site adapters, headless Playwright runner, and content deduplication.
 - 👤 [Profile & Grounded Evidence](internals/profile_en.md) — Atomic evidence model, profile immutability, and fact requirement gates.
 - 🎯 [Triage & Evaluation](internals/evaluation_en.md) — Heading/bullet extractor, offline screening, and PII-stripped evaluation packets.
@@ -172,7 +172,7 @@ mocnghe/
 │   │   ├── profile.py         # CandidateProfile, Evidence, Facts
 │   │   └── cv.py              # Claim, CV Revision, Validation
 │   ├── storage/
-│   │   └── repository.py      # SQLite repository + hash audit
+│   │   └── repository.py      # Flat-file repository + hash audit
 │   ├── cv_render.py           # ReportLab A4 PDF renderer
 │   ├── evaluation_runtime.py  # Structured requirement extraction & triage
 │   └── cli.py                 # Typer CLI entrypoints

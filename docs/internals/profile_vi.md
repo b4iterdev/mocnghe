@@ -49,7 +49,7 @@ class FactRequirement(BaseModel):
                      |  - Ghi nhận thời điểm confirmed_at (UTC)
                      |  - Tính profile_content_hash = SHA-256(payload)
                      v
-        [ Hồ sơ Bất biến (Immutable) ] (bảng profiles trong SQLite)
+        [ Hồ sơ Bất biến (Immutable) ] (tệp profiles/version.md và .yaml)
 ```
 
 ### Tính Bất biến (Immutability)

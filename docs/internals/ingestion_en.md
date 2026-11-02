@@ -81,4 +81,4 @@ All site-specific adapters implement this abstract contract:
 1. Full posting details are compiled into a normalized `freeform_text`.
 2. `hash_job_identity(freeform_text)` calculates a 64-character lowercase SHA-256 digest.
 3. The canonical identifier `job_id` is assigned as `job_<first 16 hex chars>`.
-4. In SQLite, the `jobs` table keys deduplication on `source_identity` (canonical URL or file path) when `dedupe_by_source_identity=True` is enabled, updating records rather than generating duplicates.
+4. The ingestion subsystem keys deduplication on `source_identity` (canonical URL or file path) when `dedupe_by_source_identity=True` is enabled, updating records rather than generating duplicates.
