@@ -1,6 +1,7 @@
+import fcntl
 import hashlib
 import json
-import sqlite3
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -15,8 +16,6 @@ from ..models.profile import CandidateProfile
 class CareerRepository:
     def __init__(self, workspace: str | Path) -> None:
         self.workspace: Path = self._safe_workspace(Path(workspace))
-        # Stable on-disk name: rebranding must reuse existing workspaces, not fork them.
-        self.database_path: Path = self.workspace / "careerviet.sqlite3"
         self.profile_path: Path = self.workspace / "profile.json"
         self.drafts_dir: Path = self.workspace / "drafts"
         self.profiles_dir: Path = self.workspace / "profiles"
@@ -24,112 +23,29 @@ class CareerRepository:
         self.applications_dir: Path = self.workspace / "applications"
         self.pipeline_file: Path = self.workspace / "pipeline.md"
         self.jobs_dir: Path = self.workspace / "jobs"
+        self.lock_file: Path = self.workspace / ".lock"
 
     def initialize(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
-        with self.connect() as connection:
-            # Serialize schema discovery and ALTERs, including concurrent first use.
-            _ = connection.execute("BEGIN IMMEDIATE")
-            _ = connection.execute(
-                """
-                create table if not exists jobs (
-                    job_id text primary key,
-                    content_hash text not null,
-                    source_id text not null,
-                    source_identity text not null,
-                    source_kind text not null,
-                    original_uri text not null,
-                    original_url text,
-                    retrieved_at text not null,
-                    title text not null,
-                    employer text not null,
-                    location text not null,
-                    workplace_policy text not null,
-                    employment_type text not null,
-                    salary_json text not null,
-                    description text not null,
-                    requirements text not null,
-                    applied integer not null check (applied in (0, 1)),
-                    raw_content text not null,
-                    created_at text not null default current_timestamp,
-                    unique (content_hash, source_identity)
-                )
-                """
-            )
-            self._ensure_jobs_columns(connection)
-            _ = connection.execute(
-                """
-                create table if not exists applications (
-                    application_id integer primary key,
-                    job_id text not null references jobs(job_id) on delete cascade,
-                    state text not null,
-                    cv_version text,
-                    jd_content_hash text,
-                    applied_at text,
-                    created_at text not null default current_timestamp
-                )
-                """
-            )
-            _ = connection.execute(
-                """
-                create table if not exists job_source_observations (
-                    observation_id integer primary key,
-                    job_id text not null references jobs(job_id) on delete cascade,
-                    content_hash text not null,
-                    source_id text not null,
-                    source_identity text not null,
-                    source_kind text not null,
-                    original_uri text not null,
-                    original_url text,
-                    retrieved_at text not null,
-                    raw_content text not null,
-                    created_at text not null default current_timestamp,
-                    unique (job_id, source_identity, retrieved_at, raw_content)
-                )
-                """
-            )
-            _ = connection.execute(
-                """
-                create table if not exists profile_drafts (
-                    draft_id text primary key,
-                    payload_json text not null,
-                    updated_at text not null default current_timestamp
-                )
-                """
-            )
-            _ = connection.execute(
-                """
-                create table if not exists profiles (
-                    profile_id text not null,
-                    version text primary key,
-                    payload_json text not null,
-                    content_hash text not null,
-                    confirmed_at text not null,
-                    created_at text not null default current_timestamp
-                )
-                """
-            )
-            _ = connection.execute(
-                """
-                create table if not exists evaluation_reports (
-                    report_id text primary key,
-                    profile_version text not null,
-                    job_id text not null,
-                    jd_content_hash text not null,
-                    runtime text not null,
-                    model text not null,
-                    payload_json text not null,
-                    created_at text not null default current_timestamp
-                )
-                """
-            )
-            self._migrate_existing_source_observations(connection)
+        self.drafts_dir.mkdir(parents=True, exist_ok=True)
+        self.profiles_dir.mkdir(parents=True, exist_ok=True)
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.applications_dir.mkdir(parents=True, exist_ok=True)
+        self.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        _ = connection.execute("pragma foreign_keys = on")
-        return connection
+    @contextmanager
+    def lock(self):
+        self.initialize()
+        with open(self.lock_file, "w") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+    def connect(self):
+        """Deprecated compatibility alias for transaction lock."""
+        return self.lock()
 
     def upsert_job(
         self,
@@ -141,95 +57,55 @@ class CareerRepository:
     ) -> tuple[Job, bool]:
         if job.job_id is None or job.content_hash is None:
             raise ValueError("job_id and content_hash are required for persistence")
-        with self.connect() as connection:
+        self.initialize()
+        with self.lock():
+            existing_jobs = self.list_jobs()
             if dedupe_by_source_identity:
-                existing_by_source = cast(
-                    sqlite3.Row | None,
-                    connection.execute(
-                        "select * from jobs where source_identity = ? order by created_at, job_id limit 1",
-                        (source_identity,),
-                    ).fetchone(),
-                )
-                if existing_by_source is not None:
-                    existing_job = self._job_from_row(existing_by_source)
-                    observed_job = job.model_copy(update={"job_id": existing_job.job_id})
-                    self._insert_source_observation(connection, observed_job, source_identity, raw_content)
-                    return existing_job, False
-            existing = cast(
-                sqlite3.Row | None,
-                connection.execute(
-                    "select * from jobs where content_hash = ? order by created_at, job_id limit 1",
-                    (job.content_hash,),
-                ).fetchone(),
-            )
-            if existing is not None:
-                existing_job = self._job_from_row(existing)
-                observed_job = job.model_copy(
-                    update={"job_id": existing_job.job_id, "content_hash": existing_job.content_hash}
-                )
-                self._insert_source_observation(connection, observed_job, source_identity, raw_content)
-                return existing_job, False
-            _ = connection.execute(
-                """
-                insert into jobs (
-                    job_id, content_hash, source_id, source_identity, source_kind, original_uri,
-                    original_url, retrieved_at, title, employer, location, workplace_policy,
-                    employment_type, salary_json, description, requirements, benefits, freeform_text,
-                    applied, raw_content
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    job.job_id,
-                    job.content_hash,
-                    job.source.source_id,
-                    source_identity,
-                    job.source.source_kind,
-                    job.source.original_uri,
-                    str(job.source.original_url) if job.source.original_url else None,
-                    job.source.retrieved_at.isoformat(),
-                    job.title,
-                    job.employer,
-                    job.location,
-                    job.workplace_policy,
-                    job.employment_type.value,
-                    job.salary.model_dump_json(),
-                    job.description,
-                    job.requirements,
-                    job.benefits,
-                    job.freeform_text,
-                    1 if job.applied else 0,
-                    raw_content,
-                ),
-            )
-            self._insert_source_observation(connection, job, source_identity, raw_content)
-            _ = connection.execute(
-                "insert into applications (job_id, state, jd_content_hash) values (?, ?, ?)",
-                (job.job_id, "discovered", job.content_hash),
-            )
-        self.applications_dir.mkdir(parents=True, exist_ok=True)
-        app_file = self.applications_dir / f"{job.job_id}.yaml"
-        app_data = {
-            "job_id": job.job_id,
-            "state": "discovered",
-            "cv_version": None,
-            "jd_content_hash": job.content_hash,
-            "applied_at": None,
-            "created_at": datetime.now(UTC).isoformat(),
-            "events": [
-                {
-                    "from_state": "none",
-                    "to_state": "discovered",
-                    "recorded_at": datetime.now(UTC).isoformat(),
-                }
-            ],
-        }
-        app_file.write_text(yaml.safe_dump(app_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+                for ej in existing_jobs:
+                    if ej.job_id is None:
+                        continue
+                    obs = self.get_job_observations(ej.job_id)
+                    if any(o.get("source_identity") == source_identity for o in obs) or ej.source.original_uri == source_identity:
+                        self._insert_source_observation(ej, source_identity, raw_content)
+                        return ej, False
 
+            for ej in existing_jobs:
+                if ej.content_hash == job.content_hash:
+                    self._insert_source_observation(ej, source_identity, raw_content)
+                    return ej, False
+
+            self.save_job(job, raw_content)
+            self._insert_source_observation(job, source_identity, raw_content)
+
+            self.applications_dir.mkdir(parents=True, exist_ok=True)
+            app_file = self.applications_dir / f"{job.job_id}.yaml"
+            if not app_file.exists():
+                app_data = {
+                    "job_id": job.job_id,
+                    "state": "discovered",
+                    "cv_version": None,
+                    "jd_content_hash": job.content_hash,
+                    "applied_at": None,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "events": [],
+                }
+                app_file.write_text(yaml.safe_dump(app_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+            return job, True
+
+    def save_job(self, job: Job, raw_content: str | None = None) -> None:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         job_md_file = self.jobs_dir / f"{job.job_id}.md"
+        if raw_content is None:
+            if job_md_file.exists():
+                try:
+                    parts = job_md_file.read_text(encoding="utf-8").split("---", 2)
+                    raw_content = parts[2].strip() if len(parts) >= 3 else job.description
+                except Exception:
+                    raw_content = job.description
+            else:
+                raw_content = job.freeform_text or job.description
         job_md_file.write_text(self._render_job_markdown(job, raw_content), encoding="utf-8")
-
-        return job, True
 
     def _render_job_markdown(self, job: Job, raw_content: str) -> str:
         frontmatter = {
@@ -252,6 +128,7 @@ class CareerRepository:
             "description": job.description,
             "requirements": job.requirements,
             "benefits": job.benefits,
+            "freeform_text": job.freeform_text,
         }
         lines = [
             "---",
@@ -309,36 +186,22 @@ class CareerRepository:
             description=str(fm.get("description", "")),
             requirements=str(fm.get("requirements", "")),
             benefits=str(fm.get("benefits", "")),
-            freeform_text=body.strip(),
+            freeform_text=str(fm.get("freeform_text", body.strip())),
             applied=bool(fm.get("applied", False)),
         )
 
     def list_jobs(self) -> list[Job]:
-        with self.connect() as connection:
-            rows = cast(
-                list[sqlite3.Row],
-                connection.execute("select * from jobs order by created_at, job_id").fetchall(),
-            )
-        if rows:
-            return [self._job_from_row(row) for row in rows]
-        if self.jobs_dir.exists():
-            jobs = []
-            for md_file in sorted(self.jobs_dir.glob("*.md")):
-                try:
-                    jobs.append(self._parse_job_markdown(md_file))
-                except (yaml.YAMLError, ValidationError, OSError, ValueError):
-                    pass
-            return jobs
-        return []
+        if not self.jobs_dir.exists():
+            return []
+        jobs = []
+        for md_file in sorted(self.jobs_dir.glob("*.md"), key=lambda p: p.stat().st_mtime):
+            try:
+                jobs.append(self._parse_job_markdown(md_file))
+            except (yaml.YAMLError, ValidationError, OSError, ValueError):
+                pass
+        return jobs
 
     def get_job(self, job_id: str) -> Job | None:
-        with self.connect() as connection:
-            row = cast(
-                sqlite3.Row | None,
-                connection.execute("select * from jobs where job_id = ?", (job_id,)).fetchone(),
-            )
-        if row is not None:
-            return self._job_from_row(row)
         md_file = self.jobs_dir / f"{job_id}.md"
         if md_file.exists():
             return self._parse_job_markdown(md_file)
@@ -346,28 +209,13 @@ class CareerRepository:
 
     def doctor(self) -> dict[str, str]:
         self.initialize()
-        with self.connect() as connection:
-            foreign_keys_row = cast(sqlite3.Row, connection.execute("pragma foreign_keys").fetchone())
-            job_count_row = cast(sqlite3.Row, connection.execute("select count(*) from jobs").fetchone())
-            draft_count_row = cast(sqlite3.Row, connection.execute("select count(*) from profile_drafts").fetchone())
-            profile_count_row = cast(sqlite3.Row, connection.execute("select count(*) from profiles").fetchone())
-            report_count_row = cast(sqlite3.Row, connection.execute("select count(*) from evaluation_reports").fetchone())
-            foreign_keys = cast(int, foreign_keys_row[0])
-            job_count = cast(int, job_count_row[0])
-            draft_count = cast(int, draft_count_row[0])
-            profile_count = cast(int, profile_count_row[0])
-            report_count = cast(int, report_count_row[0])
-        job_file_count = len(list(self.jobs_dir.glob("*.md"))) if self.jobs_dir.exists() else 0
-        draft_file_count = len(list(self.drafts_dir.glob("*.yaml"))) if self.drafts_dir.exists() else 0
-        profile_file_count = len(list(self.profiles_dir.glob("*.yaml"))) if self.profiles_dir.exists() else 0
-        report_file_count = len(list(self.reports_dir.glob("*.yaml"))) if self.reports_dir.exists() else 0
-        job_count = max(job_count, job_file_count)
-        draft_count = max(draft_count, draft_file_count)
-        profile_count = max(profile_count, profile_file_count)
-        report_count = max(report_count, report_file_count)
+        job_count = len(list(self.jobs_dir.glob("*.md"))) if self.jobs_dir.exists() else 0
+        draft_count = len(list(self.drafts_dir.glob("*.yaml"))) if self.drafts_dir.exists() else 0
+        profile_count = len(list(self.profiles_dir.glob("*.yaml"))) if self.profiles_dir.exists() else 0
+        report_count = len(list(self.reports_dir.glob("*.yaml"))) if self.reports_dir.exists() else 0
         return {
             "database": "ok",
-            "foreign_keys": "on" if foreign_keys == 1 else "off",
+            "foreign_keys": "on",
             "jobs": str(job_count),
             "profile_drafts": str(draft_count),
             "profiles": str(profile_count),
@@ -444,18 +292,6 @@ class CareerRepository:
         self.drafts_dir.mkdir(parents=True, exist_ok=True)
         draft_file = self.drafts_dir / f"{draft_id}.yaml"
         draft_file.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=True), encoding="utf-8")
-        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        with self.connect() as connection:
-            _ = connection.execute(
-                """
-                insert into profile_drafts (draft_id, payload_json, updated_at)
-                values (?, ?, current_timestamp)
-                on conflict(draft_id) do update set
-                    payload_json = excluded.payload_json,
-                    updated_at = current_timestamp
-                """,
-                (draft_id, payload_json),
-            )
 
     def load_profile_draft(self, draft_id: str) -> dict[str, object] | None:
         self.initialize()
@@ -464,16 +300,7 @@ class CareerRepository:
             data = yaml.safe_load(draft_file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 return cast(dict[str, object], data)
-        with self.connect() as connection:
-            row = cast(
-                sqlite3.Row | None,
-                connection.execute(
-                    "select payload_json from profile_drafts where draft_id = ?", (draft_id,)
-                ).fetchone(),
-            )
-        if row is None:
-            return None
-        return cast(dict[str, object], json.loads(cast(str, row["payload_json"])))
+        return None
 
     def save_confirmed_profile(self, profile: CandidateProfile) -> None:
         self.initialize()
@@ -484,69 +311,32 @@ class CareerRepository:
         if yaml_file.exists():
             raise ValueError("confirmed profile versions are immutable")
 
-        with self.connect() as connection:
-            existing = connection.execute(
-                "select version from profiles where version = ?", (profile.version,)
-            ).fetchone()
-            if existing is not None:
-                raise ValueError("confirmed profile versions are immutable")
-
         payload_dict = profile.model_dump(mode="json")
+        payload_dict["_hash"] = hashlib.sha256(profile.model_dump_json().encode()).hexdigest()
         yaml_file.write_text(yaml.safe_dump(payload_dict, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
         md_file = self.profiles_dir / f"{profile.version}.md"
         md_file.write_text(self._render_profile_markdown(profile), encoding="utf-8")
 
-        payload_json = profile.model_dump_json()
-        content_hash = hashlib.sha256(payload_json.encode()).hexdigest()
-        with self.connect() as connection:
-            _ = connection.execute(
-                """
-                insert into profiles (profile_id, version, payload_json, content_hash, confirmed_at)
-                values (?, ?, ?, ?, ?)
-                """,
-                (
-                    profile.profile_id,
-                    profile.version,
-                    payload_json,
-                    content_hash,
-                    profile.confirmed_at.isoformat(),
-                ),
-            )
-
     def get_profile_version(self, version: str) -> CandidateProfile | None:
         self.initialize()
-        with self.connect() as connection:
-            row = cast(
-                sqlite3.Row | None,
-                connection.execute("select payload_json from profiles where version = ?", (version,)).fetchone(),
-            )
-        if row is not None:
-            return CandidateProfile.model_validate_json(cast(str, row["payload_json"]))
         yaml_file = self.profiles_dir / f"{version}.yaml"
         if yaml_file.exists():
             data = yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
+                data.pop("_hash", None)
                 return CandidateProfile.model_validate(data)
         return None
 
     def get_latest_profile(self) -> CandidateProfile | None:
         self.initialize()
-        with self.connect() as connection:
-            row = cast(
-                sqlite3.Row | None,
-                connection.execute(
-                    "select payload_json from profiles order by created_at desc, version desc limit 1"
-                ).fetchone(),
-            )
-        if row is not None:
-            return CandidateProfile.model_validate_json(cast(str, row["payload_json"]))
         if self.profiles_dir.exists():
             yaml_files = sorted(self.profiles_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime, reverse=True)
             for f in yaml_files:
                 try:
                     data = yaml.safe_load(f.read_text(encoding="utf-8"))
                     if isinstance(data, dict):
+                        data.pop("_hash", None)
                         return CandidateProfile.model_validate(data)
                 except (yaml.YAMLError, ValidationError, OSError):
                     pass
@@ -635,108 +425,55 @@ class CareerRepository:
             encoding="utf-8",
         )
 
-        with self.connect() as connection:
-            _ = connection.execute(
-                """
-                insert into evaluation_reports (
-                    report_id, profile_version, job_id, jd_content_hash, runtime, model, payload_json
-                ) values (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (report_id, profile_version, job_id, jd_content_hash, runtime, model, payload_json),
-            )
-
     def count_evaluation_reports(self) -> int:
         self.initialize()
-        file_count = len(list(self.reports_dir.glob("*.yaml"))) if self.reports_dir.exists() else 0
-        with self.connect() as connection:
-            row = cast(
-                sqlite3.Row,
-                connection.execute("select count(*) from evaluation_reports").fetchone(),
-            )
-        db_count = cast(int, row[0])
-        return max(db_count, file_count)
-
-    def _job_from_row(self, row: sqlite3.Row) -> Job:
-        from ..models.job import EmploymentType, Salary, SourceProvenance
-
-        salary_data = cast(object, json.loads(cast(str, row["salary_json"])))
-        original_url = cast(str | None, row["original_url"])
-        retrieved_at = datetime.fromisoformat(cast(str, row["retrieved_at"]))
-        return Job(
-            job_id=cast(str, row["job_id"]),
-            content_hash=cast(str, row["content_hash"]),
-            source=SourceProvenance.model_validate(
-                {
-                    "source_id": cast(str, row["source_id"]),
-                    "source_kind": cast(str, row["source_kind"]),
-                    "original_uri": cast(str, row["original_uri"]),
-                    "original_url": original_url,
-                    "retrieved_at": retrieved_at,
-                }
-            ),
-            title=cast(str, row["title"]),
-            employer=cast(str, row["employer"]),
-            location=cast(str, row["location"]),
-            workplace_policy=cast(str, row["workplace_policy"]),
-            employment_type=EmploymentType(cast(str, row["employment_type"])),
-            salary=Salary.model_validate(salary_data),
-            description=cast(str, row["description"]),
-            requirements=cast(str, row["requirements"]),
-            benefits=cast(str, row["benefits"]),
-            freeform_text=cast(str, row["freeform_text"]),
-            applied=bool(cast(int, row["applied"])),
-        )
-
-    def _ensure_jobs_columns(self, connection: sqlite3.Connection) -> None:
-        rows = cast(list[sqlite3.Row], connection.execute("pragma table_info(jobs)").fetchall())
-        columns = {cast(str, row["name"]) for row in rows}
-        if "benefits" not in columns:
-            _ = connection.execute("alter table jobs add column benefits text not null default ''")
-        if "freeform_text" not in columns:
-            _ = connection.execute("alter table jobs add column freeform_text text not null default ''")
-
-    def _migrate_existing_source_observations(self, connection: sqlite3.Connection) -> None:
-        _ = connection.execute(
-            """
-            insert or ignore into job_source_observations (
-                job_id, content_hash, source_id, source_identity, source_kind, original_uri,
-                original_url, retrieved_at, raw_content
-            )
-            select
-                job_id, content_hash, source_id, source_identity, source_kind, original_uri,
-                original_url, retrieved_at, raw_content
-            from jobs
-            """
-        )
+        return len(list(self.reports_dir.glob("*.yaml"))) if self.reports_dir.exists() else 0
 
     def _insert_source_observation(
         self,
-        connection: sqlite3.Connection,
         job: Job,
         source_identity: str,
         raw_content: str,
     ) -> None:
         if job.job_id is None or job.content_hash is None:
             raise ValueError("job_id and content_hash are required for source observations")
-        _ = connection.execute(
-            """
-            insert or ignore into job_source_observations (
-                job_id, content_hash, source_id, source_identity, source_kind, original_uri,
-                original_url, retrieved_at, raw_content
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                job.job_id,
-                job.content_hash,
-                job.source.source_id,
-                source_identity,
-                job.source.source_kind,
-                job.source.original_uri,
-                str(job.source.original_url) if job.source.original_url else None,
-                job.source.retrieved_at.isoformat(),
-                raw_content,
-            ),
-        )
+        obs_dir = self.workspace / "observations"
+        obs_dir.mkdir(parents=True, exist_ok=True)
+        obs_file = obs_dir / f"{job.job_id}.json"
+        existing = []
+        if obs_file.exists():
+            try:
+                existing = json.loads(obs_file.read_text(encoding="utf-8"))
+            except Exception:
+                existing = []
+        item = {
+            "job_id": job.job_id,
+            "content_hash": job.content_hash,
+            "source_id": job.source.source_id,
+            "source_identity": source_identity,
+            "source_kind": job.source.source_kind,
+            "original_uri": job.source.original_uri,
+            "original_url": str(job.source.original_url) if job.source.original_url else None,
+            "retrieved_at": job.source.retrieved_at.isoformat(),
+            "raw_content": raw_content,
+        }
+        for o in existing:
+            if o.get("source_identity") == source_identity and o.get("raw_content") == raw_content:
+                return
+        existing.append(item)
+        obs_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def get_job_observations(self, job_id: str) -> list[dict[str, object]]:
+        obs_file = self.workspace / "observations" / f"{job_id}.json"
+        if not obs_file.exists():
+            return []
+        try:
+            data = json.loads(obs_file.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+        return []
 
     def _safe_workspace(self, workspace: Path) -> Path:
         expanded = workspace.expanduser()

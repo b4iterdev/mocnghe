@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -99,15 +100,8 @@ class CoverLetterService:
     def __init__(self, cv_service):
         self.cvs = cv_service
         self.repo = cv_service.repo
-        with self.repo.connect() as db:
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS cover_letters "
-                "(id TEXT PRIMARY KEY, payload TEXT NOT NULL, hash TEXT NOT NULL)"
-            )
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS cover_letter_approvals "
-                "(id TEXT PRIMARY KEY REFERENCES cover_letters(id), hash TEXT NOT NULL)"
-            )
+        self.letters_dir = self.repo.workspace / "cover_letters"
+        self.letters_dir.mkdir(parents=True, exist_ok=True)
 
     def create(
         self,
@@ -187,35 +181,42 @@ class CoverLetterService:
             evidence_ids=[c.evidence_id for c in cv.claims],
         )
 
-        with self.repo.connect() as db:
-            db.execute(
-                "INSERT INTO cover_letters VALUES (?, ?, ?)",
-                (letter.id, letter.model_dump_json(), digest(letter)),
-            )
+        payload_data = letter.model_dump(mode="json")
+        payload_data["_hash"] = digest(letter)
+        letter_file = self.letters_dir / f"{letter.id}.yaml"
+        letter_file.write_text(yaml.safe_dump(payload_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
         return letter
 
     def get(self, cl_id: str) -> CoverLetter:
-        with self.repo.connect() as db:
-            row = db.execute("SELECT payload, hash FROM cover_letters WHERE id=?", (cl_id,)).fetchone()
-        if row is None:
+        letter_file = self.letters_dir / f"{cl_id}.yaml"
+        if not letter_file.exists():
             raise ValueError("cover letter not found")
-        letter = CoverLetter.model_validate_json(row["payload"])
-        if digest(letter) != row["hash"]:
+        data = yaml.safe_load(letter_file.read_text(encoding="utf-8"))
+        stored_hash = data.pop("_hash", None)
+        letter = CoverLetter.model_validate(data)
+        if stored_hash is not None and digest(letter) != stored_hash:
             raise ValueError("cover letter storage hash mismatch")
         return letter
 
     def approved(self, cl_id: str) -> bool:
         letter = self.get(cl_id)
-        with self.repo.connect() as db:
-            row = db.execute("SELECT hash FROM cover_letter_approvals WHERE id=?", (cl_id,)).fetchone()
-        return row is not None and row["hash"] == digest(letter)
+        appr_file = self.letters_dir / f"{cl_id}.approval.yaml"
+        if appr_file.exists():
+            data = yaml.safe_load(appr_file.read_text(encoding="utf-8"))
+            return isinstance(data, dict) and data.get("content_hash") == digest(letter)
+        return False
 
     def approve(self, cl_id: str, content_hash: str) -> None:
         letter = self.get(cl_id)
         if content_hash != digest(letter):
             raise ValueError("content hash mismatch; review exact content before approving")
-        with self.repo.connect() as db:
-            db.execute("INSERT OR REPLACE INTO cover_letter_approvals VALUES (?, ?)", (cl_id, content_hash))
+        appr_file = self.letters_dir / f"{cl_id}.approval.yaml"
+        appr_data = {
+            "cl_id": cl_id,
+            "content_hash": content_hash,
+            "approved_at": datetime.now(UTC).isoformat(),
+        }
+        appr_file.write_text(yaml.safe_dump(appr_data, allow_unicode=True), encoding="utf-8")
 
     def export(self, cl_id: str, target_dir: Path, *, max_pages: int = 1) -> None:
         letter = self.get(cl_id)

@@ -1,7 +1,6 @@
 """Synthetic regression checks for existing and new tracking safety gates."""
-import sqlite3
-
 import pytest
+import yaml
 
 from mocnghe.applications.tracker import ApplicationTracker
 from mocnghe.cv import CVService
@@ -22,8 +21,8 @@ def ready(repo, *, targeted=False):
 
 def test_stale_untargeted_job_rejected_without_partial_write(repo):
     tracker, job, cv = ready(repo)
-    with repo.connect() as db:
-        db.execute('UPDATE jobs SET title=? WHERE job_id=?', ('Changed', job.job_id))
+    job.title = "Changed"
+    repo.save_job(job)
     with pytest.raises(ValueError, match='stale'):
         tracker.transition(job.job_id, 'applied', cv_id=cv.id, confirm=True)
     assert tracker.get(job.job_id)['state'] == 'ready'
@@ -31,12 +30,13 @@ def test_stale_untargeted_job_rejected_without_partial_write(repo):
     assert len(tracker.history(job.job_id)) == 3
 
 
-def test_event_failure_rolls_back_flag_and_state(repo):
+def test_event_failure_rolls_back_flag_and_state(repo, monkeypatch):
     tracker, job, cv = ready(repo)
-    with repo.connect() as db:
-        db.execute("CREATE TRIGGER fail_event BEFORE INSERT ON application_events "
-                   "BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END")
-    with pytest.raises(sqlite3.IntegrityError):
+    # Simulate write failure during yaml dump
+    def failing_write(*args, **kwargs):
+        raise OSError("synthetic disk failure")
+    monkeypatch.setattr(yaml, "safe_dump", failing_write)
+    with pytest.raises(OSError, match="synthetic disk failure"):
         tracker.transition(job.job_id, 'applied', cv_id=cv.id, confirm=True)
     assert tracker.get(job.job_id)['state'] == 'ready'
     assert tracker.get(job.job_id)['applied_at'] is None
@@ -45,16 +45,19 @@ def test_event_failure_rolls_back_flag_and_state(repo):
 
 def test_duplicate_legacy_rows_fail_closed(repo):
     tracker, job, _ = ready(repo)
-    with repo.connect() as db:
-        db.execute('INSERT INTO applications(job_id, state) VALUES (?, ?)', (job.job_id, 'discovered'))
-    with pytest.raises(ValueError, match='ambiguous'):
+    # Corrupt yaml into bad data
+    app_file = repo.applications_dir / f"{job.job_id}.yaml"
+    app_file.write_text("not a dict\n", encoding="utf-8")
+    with pytest.raises(ValueError, match='application not found'):
         tracker.transition(job.job_id, 'archived')
 
 
 def test_snapshot_tampering_detected(repo):
     tracker, job, _ = ready(repo)
-    with repo.connect() as db:
-        db.execute("UPDATE applications SET submission_json='{}' WHERE job_id=?", (job.job_id,))
+    app_file = repo.applications_dir / f"{job.job_id}.yaml"
+    data = yaml.safe_load(app_file.read_text(encoding="utf-8"))
+    data["submission_json"] = "{}"
+    app_file.write_text(yaml.safe_dump(data), encoding="utf-8")
     with pytest.raises(ValueError, match='hash'):
         tracker.get(job.job_id)
 

@@ -28,46 +28,54 @@ class ApplicationTracker:
         self.applications_dir = repo.workspace / "applications"
         self.pipeline_file = repo.workspace / "pipeline.md"
         repo.initialize()
-        with repo.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            columns = {r[1] for r in db.execute("PRAGMA table_info(applications)")}
-            for name in ("submission_json", "submission_hash"):
-                if name not in columns:
-                    db.execute(f"ALTER TABLE applications ADD COLUMN {name} TEXT")
-            db.execute("CREATE TABLE IF NOT EXISTS application_events "
-                       "(event_id INTEGER PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), "
-                       "from_state TEXT NOT NULL, to_state TEXT NOT NULL, recorded_at TEXT NOT NULL)")
 
-    def _row(self, db, job_id):
-        rows = db.execute("SELECT * FROM applications WHERE job_id=?", (job_id,)).fetchall()
-        if not rows:
+    def _app_file(self, job_id):
+        return self.applications_dir / f"{job_id}.yaml"
+
+    def _load(self, job_id):
+        f = self._app_file(job_id)
+        if not f.exists():
             raise ValueError("application not found")
-        if len(rows) != 1:
-            raise ValueError("ambiguous legacy application rows")
-        row = dict(rows[0])
-        if row["submission_json"] is not None:
-            actual = hashlib.sha256(row["submission_json"].encode()).hexdigest()
-            if actual != row["submission_hash"]:
+        data = yaml.safe_load(f.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("application not found")
+        if data.get("submission_json") is not None:
+            actual = hashlib.sha256(data["submission_json"].encode()).hexdigest()
+            if actual != data.get("submission_hash"):
                 raise ValueError("submission snapshot hash mismatch")
-        return row
+        return data
 
     def get(self, job_id):
-        with self.repo.connect() as db:
-            return self._row(db, job_id)
+        return self._load(job_id)
 
     def list(self, state=None):
         if state is not None:
             ApplicationState(state)
-        with self.repo.connect() as db:
-            ids = db.execute("SELECT DISTINCT job_id FROM applications ORDER BY job_id").fetchall()
-            rows = [self._row(db, row[0]) for row in ids]
-        return [row for row in rows if state is None or row["state"] == state]
+        if not self.applications_dir.exists():
+            return []
+        apps = []
+        for f in sorted(self.applications_dir.glob("*.yaml")):
+            try:
+                row = self._load(f.stem)
+                if state is None or row.get("state") == state:
+                    apps.append(row)
+            except ValueError:
+                pass
+        return apps
 
     def history(self, job_id):
-        with self.repo.connect() as db:
-            self._row(db, job_id)
-            return [dict(row) for row in db.execute(
-                "SELECT * FROM application_events WHERE job_id=? ORDER BY event_id", (job_id,))]
+        row = self._load(job_id)
+        events = row.get("events", [])
+        return [
+            {
+                "event_id": idx + 1,
+                "job_id": job_id,
+                "from_state": ev.get("from_state", "none"),
+                "to_state": ev.get("to_state", "none"),
+                "recorded_at": ev.get("recorded_at", ""),
+            }
+            for idx, ev in enumerate(events)
+        ]
 
     def transition(self, job_id, state, *, cv_id=None, confirm=False):
         if state == "applied" and confirm is not True:
@@ -75,6 +83,8 @@ class ApplicationTracker:
         if state not in {"ready", "applied"} and cv_id is not None:
             raise ValueError("CV selection only allowed for ready/applied")
         snapshot = None
+        cv = None
+        job = None
         if state in {"ready", "applied"}:
             if not cv_id:
                 raise ValueError("approved CV required")
@@ -85,76 +95,68 @@ class ApplicationTracker:
             job = self.repo.get_job(job_id)
             if job is None or (cv.job_id and cv.job_id != job_id):
                 raise ValueError("CV targets a different or missing job")
-            # Capture exact rows validated by CVService; compare again under write lock.
-            with self.repo.connect() as check:
-                profile = dict(check.execute("SELECT * FROM profiles WHERE version=?",
-                                             (cv.profile_version,)).fetchone())
+            profile = self.repo.get_profile_version(cv.profile_version)
+            if profile is None:
+                raise ValueError("profile not found")
             snapshot = json.dumps({"cv": cv.model_dump(mode="json"), "cv_hash": digest(cv),
                                    "job": job.model_dump(mode="json"), "job_hash": digest(job),
                                    "profile_version": cv.profile_version}, sort_keys=True)
-        with self.repo.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = self._row(db, job_id)
+
+        with self.repo.lock():
+            row = self._load(job_id)
             if state not in TRANSITIONS.get(row["state"], set()):
                 raise ValueError("invalid application transition")
-            if snapshot is not None:
-                current_job = self.repo._job_from_row(db.execute(
-                    "SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone())
-                stored_cv = db.execute("SELECT payload, hash FROM cv_revisions WHERE id=?", (cv_id,)).fetchone()
-                approval = db.execute("SELECT hash FROM cv_approvals WHERE id=?", (cv_id,)).fetchone()
-                current_profile = dict(db.execute("SELECT * FROM profiles WHERE version=?",
-                                                  (cv.profile_version,)).fetchone())
-                canonical_profile = CandidateProfile.model_validate_json(current_profile["payload_json"])
-                if (hashlib.sha256(canonical_profile.model_dump_json().encode()).hexdigest()
-                        != current_profile["content_hash"] or
-                        canonical_profile.confirmed_at is None or digest(canonical_profile) != cv.profile_hash or
+            if snapshot is not None and cv is not None and job is not None:
+                current_job = self.repo.get_job(job_id)
+                current_profile = self.repo.get_profile_version(cv.profile_version)
+                if (current_job is None or current_profile is None or
+                        current_profile.confirmed_at is None or
+                        digest(current_profile) != cv.profile_hash or
                         (cv.job_id is not None and digest(current_job) != cv.job_hash)):
                     raise ValueError("stale canonical profile or targeted job")
-                if (digest(current_job) != digest(job) or current_profile != profile or
-                        stored_cv is None or stored_cv["payload"] != cv.model_dump_json() or
-                        stored_cv["hash"] != digest(cv) or approval is None or approval[0] != digest(cv)):
+                cvs = CVService(self.repo)
+                stored_cv = cvs.get(cv_id)
+                if (digest(current_job) != digest(job) or
+                        stored_cv is None or digest(stored_cv) != digest(cv) or
+                        not cvs.approved(cv_id)):
                     raise ValueError("canonical content changed during transition")
-                if state == "applied" and (row["cv_version"] != cv_id or row["submission_json"] != snapshot):
+                if state == "applied" and (row.get("cv_version") != cv_id or row.get("submission_json") != snapshot):
                     raise ValueError("ready selection is stale; return to drafting and review")
-                db.execute("UPDATE applications SET cv_version=?, jd_content_hash=?, "
-                           "submission_json=?, submission_hash=? WHERE application_id=?",
-                           (cv_id, job.content_hash, snapshot, hashlib.sha256(snapshot.encode()).hexdigest(),
-                            row["application_id"]))
+                row["cv_version"] = cv_id
+                row["jd_content_hash"] = job.content_hash
+                row["submission_json"] = snapshot
+                row["submission_hash"] = hashlib.sha256(snapshot.encode()).hexdigest()
+
             if state == "applied":
-                db.execute("UPDATE applications SET applied_at=? WHERE application_id=?",
-                           (datetime.now(UTC).isoformat(), row["application_id"]))
-                db.execute("UPDATE jobs SET applied=1 WHERE job_id=?", (job_id,))
-            db.execute("UPDATE applications SET state=? WHERE application_id=?",
-                       (state, row["application_id"]))
-            db.execute("INSERT INTO application_events(job_id, from_state, to_state, recorded_at) "
-                       "VALUES (?, ?, ?, ?)",
-                       (job_id, row["state"], state, datetime.now(UTC).isoformat()))
+                row["applied_at"] = datetime.now(UTC).isoformat()
+                job_obj = self.repo.get_job(job_id)
+                if job_obj:
+                    job_obj.applied = True
+                    self.repo.save_job(job_obj)
 
-        # Sync to YAML file
-        self.applications_dir.mkdir(parents=True, exist_ok=True)
-        yaml_file = self.applications_dir / f"{job_id}.yaml"
-        current_row = self.get(job_id)
-        events = self.history(job_id)
-        app_data = {
-            "job_id": job_id,
-            "state": current_row["state"],
-            "cv_version": current_row.get("cv_version"),
-            "jd_content_hash": current_row.get("jd_content_hash"),
-            "applied_at": current_row.get("applied_at"),
-            "created_at": current_row.get("created_at"),
-            "events": [
-                {
-                    "from_state": ev["from_state"],
-                    "to_state": ev["to_state"],
-                    "recorded_at": ev["recorded_at"],
-                }
-                for ev in events
-            ],
-        }
-        yaml_file.write_text(yaml.safe_dump(app_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        self._write_pipeline_md()
+            prev_state = row["state"]
+            row["state"] = state
+            if "events" not in row:
+                row["events"] = []
+            row["events"].append({
+                "from_state": prev_state,
+                "to_state": state,
+                "recorded_at": datetime.now(UTC).isoformat(),
+            })
 
-        return current_row
+            try:
+                self.applications_dir.mkdir(parents=True, exist_ok=True)
+                yaml_content = yaml.safe_dump(row, allow_unicode=True, sort_keys=False)
+                self._app_file(job_id).write_text(yaml_content, encoding="utf-8")
+                self._write_pipeline_md()
+            except Exception:
+                if state == "applied":
+                    job_obj = self.repo.get_job(job_id)
+                    if job_obj:
+                        job_obj.applied = False
+                        self.repo.save_job(job_obj)
+                raise
+            return row
 
     def _write_pipeline_md(self) -> None:
         all_apps = self.list()

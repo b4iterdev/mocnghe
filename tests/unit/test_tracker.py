@@ -26,8 +26,8 @@ def test_apply_requires_confirmation_and_preserves_snapshot(repo):
     tracker.transition(job.job_id, 'interviewing')
     assert tracker.get(job.job_id)['applied_at'] == applied['applied_at']
     assert tracker.get(job.job_id)['submission_json'] == applied['submission_json']
-    with repo.connect() as db:
-        db.execute('UPDATE jobs SET title=? WHERE job_id=?', ('Updated JD', job.job_id))
+    job.title = 'Updated JD'
+    repo.save_job(job)
     assert tracker.get(job.job_id)['submission_json'] == applied['submission_json']
     assert len(tracker.history(job.job_id)) == 5
 

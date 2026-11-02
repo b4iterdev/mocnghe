@@ -1,4 +1,5 @@
 import pytest
+import yaml
 
 from mocnghe.storage.repository import CareerRepository
 
@@ -67,8 +68,11 @@ def test_canonical_tampering_rejected(repo):
     from mocnghe.cv import CVService
     s = CVService(repo)
     cv = s.create("v1", ["ev1"], language="vi")
-    with repo.connect() as db:
-        db.execute("UPDATE profiles SET payload_json=replace(payload_json, ?, ?)",
-                   ("khách hàng", "bệnh nhân"))
+    # Tamper canonical profile file
+    pfile = repo.profiles_dir / "v1.yaml"
+    text = pfile.read_text(encoding="utf-8").replace("khách hàng", "bệnh nhân")
+    data = yaml.safe_load(text)
+    data["_hash"] = "0" * 64
+    pfile.write_text(yaml.safe_dump(data), encoding="utf-8")
     with pytest.raises(ValueError, match="stale"):
         s.approve(cv.id, s.content_hash(cv))

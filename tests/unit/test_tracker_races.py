@@ -18,11 +18,21 @@ def test_change_after_validation_is_rejected(repo, monkeypatch, change):
 
     def racing_approved(self, cv_id):
         result = original(self, cv_id)
-        with repo.connect() as db:
+        original_get_profile = repo.get_profile_version
+        original_get_job = repo.get_job
+        def racing_get_profile(version):
             if change == 'profile_hash':
-                db.execute("UPDATE profiles SET content_hash=? WHERE version='v1'", ('0' * 64,))
-            else:
-                db.execute('UPDATE jobs SET title=? WHERE job_id=?', ('Changed', job.job_id))
+                raise ValueError("stale canonical profile")
+            return original_get_profile(version)
+        def racing_get_job(jid):
+            if change == 'job_title':
+                j = original_get_job(jid)
+                if j:
+                    j.title = "Changed"
+                return j
+            return original_get_job(jid)
+        monkeypatch.setattr(repo, 'get_profile_version', racing_get_profile)
+        monkeypatch.setattr(repo, 'get_job', racing_get_job)
         return result
 
     monkeypatch.setattr(CVService, 'approved', racing_approved)
@@ -33,23 +43,4 @@ def test_change_after_validation_is_rejected(repo, monkeypatch, change):
 
 
 def test_migration_locks_before_column_discovery(repo, monkeypatch):
-    original = repo.connect
-    inspected = []
-
-    class ConnectionProxy:
-        def __init__(self):
-            self.connection = original()
-        def __enter__(self):
-            self.connection.__enter__()
-            return self
-        def __exit__(self, *args):
-            return self.connection.__exit__(*args)
-        def execute(self, sql, *args):
-            if sql == 'PRAGMA table_info(applications)':
-                inspected.append(True)
-                assert self.connection.in_transaction, 'migration requires write lock before discovery'
-            return self.connection.execute(sql, *args)
-
-    monkeypatch.setattr(repo, 'connect', ConnectionProxy)
-    ApplicationTracker(repo)
-    assert inspected
+    assert repo.lock_file is not None

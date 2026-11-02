@@ -53,9 +53,8 @@ def test_http_import_dedupes_by_canonical_source_identity_across_changed_content
     )
 
     jobs = repository.list_jobs()
-    with repository.connect() as connection:
-        application_count = connection.execute("select count(*) from applications").fetchone()[0]
-        observation_count = connection.execute("select count(*) from job_source_observations").fetchone()[0]
+    application_count = len(list(repository.applications_dir.glob("*.yaml")))
+    observation_count = len(repository.get_job_observations(str(first.job_id)))
 
     assert first_result.imported == 1
     assert second_result.existing == 1

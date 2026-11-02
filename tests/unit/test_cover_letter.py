@@ -1,4 +1,5 @@
 import pytest
+import yaml
 from pypdf import PdfReader
 
 from mocnghe.cover_letter import CoverLetterService
@@ -98,8 +99,10 @@ def test_tampered_cover_letter_rejected(repo):
     cl_service = CoverLetterService(cv_service)
     cl = cl_service.create(cv.id, job.job_id)
 
-    with repo.connect() as db:
-        db.execute("UPDATE cover_letters SET hash = ? WHERE id = ?", ("0" * 64, cl.id))
+    cl_file = repo.workspace / "cover_letters" / f"{cl.id}.yaml"
+    data = yaml.safe_load(cl_file.read_text(encoding="utf-8"))
+    data["_hash"] = "0" * 64
+    cl_file.write_text(yaml.safe_dump(data), encoding="utf-8")
 
     with pytest.raises(ValueError, match="hash mismatch"):
         cl_service.get(cl.id)

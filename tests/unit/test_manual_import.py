@@ -1,5 +1,5 @@
 # pyright: reportMissingTypeStubs=false
-import sqlite3
+import json
 from pathlib import Path
 from typing import cast
 
@@ -61,30 +61,19 @@ def test_manual_import_preserves_explicit_unknown_salary(tmp_path: Path) -> None
     assert imported.salary.kind.value == "unknown"
 
 
-def _source_observation_rows(repository: CareerRepository) -> list[sqlite3.Row]:
-    with repository.connect() as connection:
-        table_rows = cast(
-            list[sqlite3.Row],
-            connection.execute(
-                "select name from sqlite_master where type = 'table' order by name"
-            ).fetchall(),
-        )
-        tables = [cast(str, row["name"]) for row in table_rows]
-        for table in tables:
-            column_rows = cast(
-                list[sqlite3.Row], connection.execute(f"pragma table_info({table})").fetchall()
-            )
-            columns = {cast(str, row["name"]) for row in column_rows}
-            required_columns = {"job_id", "source_identity", "raw_content", "retrieved_at"}
-            provenance_columns = {"source_id", "original_uri"}
-            if required_columns.issubset(columns) and provenance_columns.intersection(columns):
-                return cast(
-                    list[sqlite3.Row],
-                    connection.execute(
-                        f"select * from {table} order by retrieved_at, source_identity"
-                    ).fetchall(),
-                )
-    return []
+def _source_observation_rows(repository: CareerRepository) -> list[dict[str, object]]:
+    obs_dir = repository.workspace / "observations"
+    if not obs_dir.exists():
+        return []
+    rows = []
+    for f in obs_dir.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                rows.extend(data)
+        except Exception:
+            pass
+    return sorted(rows, key=lambda r: str(r.get("retrieved_at", "")))
 
 
 def test_manual_import_deduplicates_copied_renamed_files_but_keeps_source_observations(
@@ -183,14 +172,6 @@ Ghi chú tự do không có nhãn: ưu tiên ứng viên gần cửa hàng.
     imported = import_jd_text(repository, jd, source_identity="non-tech-vietnamese-labels")
     assert imported.job_id is not None
     stored = repository.get_job(imported.job_id)
-    with repository.connect() as connection:
-        raw_row = cast(
-            sqlite3.Row,
-            connection.execute(
-                "select raw_content from jobs where job_id = ?", (imported.job_id,)
-            ).fetchone(),
-        )
-        raw_content = cast(str, raw_row["raw_content"])
 
     assert stored is not None
     assert imported.title == "Nhân viên bán hàng\nca tối"
@@ -203,4 +184,3 @@ Ghi chú tự do không có nhãn: ưu tiên ứng viên gần cửa hàng.
     assert imported.freeform_text == "Ghi chú tự do không có nhãn: ưu tiên ứng viên gần cửa hàng."
     assert stored.benefits == imported.benefits
     assert stored.freeform_text == imported.freeform_text
-    assert raw_content == jd

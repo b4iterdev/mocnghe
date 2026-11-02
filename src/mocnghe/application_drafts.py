@@ -1,7 +1,10 @@
 """Drafts are local documents, not submissions or application tracker transitions."""
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
+
+import yaml
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,11 +44,8 @@ class ApplicationDraftService:
     def __init__(self, cvs):
         self.cvs = cvs
         self.repo = cvs.repo
-        with self.repo.connect() as db:
-            db.execute("CREATE TABLE IF NOT EXISTS application_drafts "
-                       "(id TEXT PRIMARY KEY, payload TEXT NOT NULL, hash TEXT NOT NULL)")
-            db.execute("CREATE TABLE IF NOT EXISTS application_draft_approvals "
-                       "(id TEXT PRIMARY KEY REFERENCES application_drafts(id), hash TEXT NOT NULL)")
+        self.drafts_dir = self.repo.workspace / "drafts"
+        self.drafts_dir.mkdir(parents=True, exist_ok=True)
 
     def create(self, cv_id, job_id, *, subject, route, questions=(), answers=None):
         if not isinstance(questions, (list, tuple)) or len(questions) > 100:
@@ -86,19 +86,20 @@ class ApplicationDraftService:
                                  profile_version=cv.profile_version, profile_hash=cv.profile_hash,
                                  job_id=job_id, job_hash=digest(job), language=cv.language,
                                  subject=subject, route=route, body=body, answers=items)
-        with self.repo.connect() as db:
-            db.execute("INSERT INTO application_drafts VALUES (?, ?, ?)",
-                       (draft.id, draft.model_dump_json(), digest(draft)))
+        payload_data = draft.model_dump(mode="json")
+        payload_data["_hash"] = digest(draft)
+        draft_file = self.drafts_dir / f"{draft.id}.yaml"
+        draft_file.write_text(yaml.safe_dump(payload_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
         return draft
 
     def get(self, draft_id):
-        with self.repo.connect() as db:
-            row = db.execute("SELECT payload, hash FROM application_drafts WHERE id=?",
-                             (draft_id,)).fetchone()
-        if row is None:
+        draft_file = self.drafts_dir / f"{draft_id}.yaml"
+        if not draft_file.exists():
             raise ValueError("application draft not found")
-        draft = ApplicationDraft.model_validate_json(row["payload"])
-        if draft.id != draft_id or digest(draft) != row["hash"]:
+        data = yaml.safe_load(draft_file.read_text(encoding="utf-8"))
+        stored_hash = data.pop("_hash", None)
+        draft = ApplicationDraft.model_validate(data)
+        if draft.id != draft_id or (stored_hash is not None and digest(draft) != stored_hash):
             raise ValueError("application draft hash mismatch")
         cv = self.cvs.get(draft.cv_id)
         job = self.repo.get_job(draft.job_id)
@@ -112,16 +113,21 @@ class ApplicationDraftService:
         draft = self.get(draft_id)
         if digest(draft) != content_hash:
             raise ValueError("approval hash mismatch")
-        with self.repo.connect() as db:
-            db.execute("INSERT OR REPLACE INTO application_draft_approvals VALUES (?, ?)",
-                       (draft_id, content_hash))
+        appr_file = self.drafts_dir / f"{draft_id}.approval.yaml"
+        appr_data = {
+            "draft_id": draft_id,
+            "content_hash": content_hash,
+            "approved_at": datetime.now(UTC).isoformat(),
+        }
+        appr_file.write_text(yaml.safe_dump(appr_data, allow_unicode=True), encoding="utf-8")
 
     def export(self, draft_id, target):
         draft = self.get(draft_id)
-        with self.repo.connect() as db:
-            row = db.execute("SELECT hash FROM application_draft_approvals WHERE id=?",
-                             (draft_id,)).fetchone()
-        if row is None or row["hash"] != digest(draft):
+        appr_file = self.drafts_dir / f"{draft_id}.approval.yaml"
+        if not appr_file.exists():
+            raise PermissionError("review and approve application draft before export")
+        appr_data = yaml.safe_load(appr_file.read_text(encoding="utf-8"))
+        if not isinstance(appr_data, dict) or appr_data.get("content_hash") != digest(draft):
             raise PermissionError("review and approve application draft before export")
         form = "\n\n".join(f"{a.question}\n{a.text if a.text is not None else '[UNANSWERED]'}"
                              for a in draft.answers)

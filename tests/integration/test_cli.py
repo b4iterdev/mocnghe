@@ -39,7 +39,6 @@ def test_cli_init_import_twice_list_show_profile_doctor(tmp_path: Path) -> None:
     assert "No profile found" in profile_result.output
     assert doctor_result.exit_code == 0, doctor_result.output
     assert "database: ok" in doctor_result.output
-    assert (Path(workspace) / "careerviet.sqlite3").exists()
 
 
 def test_cli_profile_validation_validates_profile_json(tmp_path: Path) -> None:
@@ -112,4 +111,3 @@ Yêu cầu: Cẩn thận và đúng giờ.
 
     assert result.exit_code != 0
     assert "mutually exclusive" in result.output.lower()
-    assert not (workspace / "careerviet.sqlite3").exists()

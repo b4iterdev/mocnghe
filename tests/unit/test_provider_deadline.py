@@ -46,8 +46,7 @@ def test_total_deadline_cancels_real_slow_provider(repo, phase):
             run_provider(s, cv.id, config, consent=True)
         elapsed = time.monotonic() - started
         assert elapsed < 0.55, f"deadline overrun: {elapsed:.3f}s"
-        with repo.connect() as db:
-            assert db.execute("SELECT count(*) FROM cv_revisions").fetchone()[0] == 1
+        assert len(list(repo.workspace.glob("cvs/*.yaml"))) == 1
     finally:
         server.shutdown()
         server.server_close()

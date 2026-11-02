@@ -1,7 +1,6 @@
 """M4 CLI entry points; all output is local unless explicit provider consent is given."""
 import json
 import os
-import sqlite3
 from functools import wraps
 from importlib.resources import files
 from pathlib import Path
@@ -29,7 +28,7 @@ def guarded(fn):
         except ValidationError:
             typer.echo("Invalid structured input; review field types and evidence contracts.", err=True)
             raise typer.Exit(1) from None
-        except (ValueError, OSError, RuntimeError, sqlite3.Error, LayoutError) as exc:
+        except (ValueError, OSError, RuntimeError, LayoutError) as exc:
             typer.echo(f"Operation failed: {exc}", err=True)
             raise typer.Exit(1) from None
     return wrapped
@@ -76,13 +75,8 @@ def review(ctx: typer.Context, cv_id: str):
 def list_cvs(ctx: typer.Context):
     s = service(ctx)
     ids: list[str] = []
-    with s.repo.connect() as db:
-        ids = [r[0] for r in db.execute("SELECT id FROM cv_revisions ORDER BY rowid")]
     if s.cvs_dir.exists():
-        file_ids = [p.stem for p in sorted(s.cvs_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime) if not p.name.endswith(".approval.yaml")]
-        for fid in file_ids:
-            if fid not in ids:
-                ids.append(fid)
+        ids = [p.stem for p in sorted(s.cvs_dir.glob("*.yaml"), key=lambda p: p.stat().st_mtime) if not p.name.endswith(".approval.yaml")]
     typer.echo(json.dumps(ids))
 
 

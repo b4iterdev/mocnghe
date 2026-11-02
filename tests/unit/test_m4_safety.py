@@ -1,7 +1,9 @@
 import json
+import unittest.mock
 from datetime import UTC, datetime
 
 import pytest
+import yaml
 from pypdf import PdfReader
 
 from mocnghe.cv import CVService
@@ -22,10 +24,13 @@ def test_missing_glyph_fails_instead_of_corrupt_pdf(repo, tmp_path):
 
 
 def test_tampered_profile_cannot_seed_new_cv(repo):
-    with repo.connect() as db:
-        db.execute("UPDATE profiles SET payload_json=replace(payload_json, ?, ?)",
-                   ("khách hàng", "bệnh nhân"))
-    with pytest.raises(ValueError, match="canonical profile"):
+    pfile = repo.profiles_dir / "v1.yaml"
+    text = pfile.read_text(encoding="utf-8").replace("khách hàng", "bệnh nhân")
+    # Invalidate stored hash to trigger tamper detection
+    data = yaml.safe_load(text)
+    data["_hash"] = "0" * 64
+    pfile.write_text(yaml.safe_dump(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="stale canonical profile"):
         CVService(repo).create("v1", ["ev1"], language="vi")
 
 
@@ -74,8 +79,10 @@ def test_tampered_cv_hash_and_unknown_profile(repo):
     with pytest.raises(ValueError, match="confirmed"):
         s.create("missing", ["ev1"], language="en")
     cv = s.create("v1", ["ev1"], language="en")
-    with repo.connect() as db:
-        db.execute("UPDATE cv_revisions SET hash=? WHERE id=?", ("0"*64, cv.id))
+    cv_file = repo.workspace / "cvs" / f"{cv.id}.yaml"
+    data = yaml.safe_load(cv_file.read_text(encoding="utf-8"))
+    data["_hash"] = "0" * 64
+    cv_file.write_text(yaml.safe_dump(data), encoding="utf-8")
     with pytest.raises(ValueError, match="hash"):
         s.get(cv.id)
 
@@ -97,8 +104,8 @@ def test_stale_job_blocks_approval(repo):
     job, _ = import_jd_text_with_status(repo, "Tiêu đề: Synthetic", source_identity="synthetic")
     s = CVService(repo)
     cv = s.create("v1", ["ev1"], language="en", job_id=job.job_id)
-    with repo.connect() as db:
-        db.execute("UPDATE jobs SET title=? WHERE job_id=?", ("Changed normalized title", job.job_id))
+    job.title = "Changed normalized title"
+    repo.save_job(job)
     with pytest.raises(ValueError, match="stale canonical job"):
         s.approve(cv.id, s.content_hash(cv))
 
@@ -118,8 +125,7 @@ def test_provider_failure_no_new_revision(repo):
         with pytest.raises(RuntimeError) as error:
             run_provider(s, cv.id, config, consent=True, transport=transport)
         assert "DO_NOT_LEAK" not in str(error.value)
-    with repo.connect() as db:
-        assert db.execute("SELECT count(*) FROM cv_revisions").fetchone()[0] == 1
+    assert len(list(repo.workspace.glob("cvs/*.yaml"))) == 1
 
 
 def test_provider_real_loopback_http(repo):
@@ -223,11 +229,10 @@ def test_draft_payload_tampering_detected(repo):
     draft = apps.create(cv.id, job.job_id, subject="Test subject", route="manual")
 
     # Tamper with the stored hash
-    with repo.connect() as db:
-        db.execute(
-            "UPDATE application_drafts SET hash=? WHERE id=?",
-            ("0" * 64, draft.id),
-        )
+    draft_file = repo.workspace / "drafts" / f"{draft.id}.yaml"
+    data = yaml.safe_load(draft_file.read_text(encoding="utf-8"))
+    data["_hash"] = "0" * 64
+    draft_file.write_text(yaml.safe_dump(data), encoding="utf-8")
 
     with pytest.raises(ValueError, match="hash"):
         apps.get(draft.id)
