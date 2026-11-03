@@ -69,27 +69,25 @@ uv run mocnghe [--workspace <path>] evaluate triage <job_id>
   3. **Mức lương sàn:** Đảm bảo phù hợp mức kỳ vọng của ứng viên.
 
 ### 6. `/tailor <job_id>` hoặc `/mocnghe-tailor <job_id>`
-Khởi tạo và tinh chỉnh bản CV xuất bản định dạng PDF:
-1. Xem danh sách các bản thảo CV hiện có:
-   ```bash
-   uv run mocnghe [--workspace <path>] cv list
-   uv run mocnghe [--workspace <path>] cv review <cv_id>
-   ```
-2. Tạo bản CV ban đầu gắn với các evidence IDs (nếu không truyền `--identity`, CLI tự động lấy toàn bộ thông tin liên hệ từ hồ sơ):
-   ```bash
-   uv run mocnghe [--workspace <path>] cv create --profile-version <ver> --language <en|vi> --job-id <job_id> \
-     --evidence <ev_id_1> --evidence <ev_id_2> ...
-   ```
-3. Xem xét mã băm SHA-256 và duyệt nội dung:
-   ```bash
-   uv run mocnghe [--workspace <path>] cv review <cv_id>
-   uv run mocnghe [--workspace <path>] cv approve <cv_id> --hash <content_hash>
-   ```
-4. Xuất gói hồ sơ CV (thư mục chứa `cv.pdf`, `cv.html`, `cv.json`):
-   ```bash
-   uv run mocnghe [--workspace <path>] cv export <cv_id> --output <output_dir> [--template modern|classic|minimal] [--max-pages 2]
-   ```
-   * *Ghi chú:* `--template modern` (mặc định) sử dụng Playwright HTML/CSS chuẩn career-ops (Professional Summary, Core Competencies pills, Experience có tên công ty/chức danh/ngày tháng/bullet, Projects có tech stack, Education/Certifications tách bảng chuẩn 1 trang A4). `--template classic` và `--template minimal` là các mẫu thay thế. `--engine reportlab` là engine thuần Python dự phòng khi không có trình duyệt.
+Tạo và xuất gói hồ sơ CV ứng tuyển hoàn chỉnh:
+```bash
+# 1. Tạo bản CV ban đầu gắn với các evidence IDs (tự động phân loại đúng mục và lấy thông tin cá nhân)
+mocnghe --workspace data cv create --profile-version 1.0 --language en --job-id <job_id> \
+  --evidence <ev_id_1> --evidence <ev_id_2> ...
+
+# 2. Xem mã băm nội dung để phê duyệt:
+mocnghe --workspace data cv review <cv_id>
+
+# 3. Phê duyệt bản CV với mã băm thu được:
+mocnghe --workspace data cv approve <cv_id> --hash <exact_hash>
+
+# 4. Xuất CV bundle chuẩn A4 1 trang (chứa cv.pdf, cv.html, cv.json):
+mocnghe --workspace data cv export <cv_id> --output data/cvs/<bundle_dir> --template modern
+
+# 5. Cập nhật trạng thái ứng tuyển:
+mocnghe --workspace data track <job_id> --state drafting
+mocnghe --workspace data track <job_id> --state ready --cv <cv_id>
+```
 
 ### 7. `/mocnghe-visual-test <cv_id>` hoặc `/visual-test <cv_id>`
 Kiểm thử hồi quy trực quan cho file PDF tránh vỡ layout hoặc tràn trang:

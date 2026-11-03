@@ -418,7 +418,10 @@ def render_modern_html(cv: Any, profile: Any = None) -> str:
     proj_claims = [
         c for c in claims
         if getattr(c, "evidence_id", "").startswith("ev_proj_")
-        or (getattr(c, "section", "") == "other" and getattr(c, "evidence_id", "") != "ev_summary")
+        or (
+            getattr(c, "section", "") == "other"
+            and not getattr(c, "evidence_id", "").startswith(("ev_summary", "ev_exp_", "ev_edu_", "ev_skills_", "ev_cert_"))
+        )
     ]
     proj_meta = {
         "ev_proj_valo_map_veto": ("Valorant Map Veto Helper", "Open Source"),

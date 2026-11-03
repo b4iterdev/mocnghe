@@ -154,8 +154,25 @@ class CVService:
             if e.provenance == "identity" or key.startswith("ev_identity"):
                 raise ValueError("identity evidence must not be used as a CV claim")
             quote = e.source_quote or e.summary
-            section = e.provenance if e.provenance in {
-                "experience", "education", "skills", "credentials"} else "other"
+            prov = (e.provenance or "").lower()
+            if prov in {"experience", "cv_experience", "work_experience"}:
+                section = "experience"
+            elif prov in {"education", "cv_education"}:
+                section = "education"
+            elif prov in {"skills", "cv_skills", "skill", "technical_skills"}:
+                section = "skills"
+            elif prov in {"credentials", "cv_certifications", "certifications", "licenses"}:
+                section = "credentials"
+            elif key.startswith("ev_exp_"):
+                section = "experience"
+            elif key.startswith("ev_edu_"):
+                section = "education"
+            elif key.startswith("ev_skills_"):
+                section = "skills"
+            elif key.startswith("ev_cert_"):
+                section = "credentials"
+            else:
+                section = "other"
             claims.append(Claim(evidence_id=key, source_quote=quote, text=quote,
                                 section=section, uncertainty=e.uncertainty, status=e.status.value))
         cv = CV(id=uuid4().hex, profile_version=version, profile_hash=digest(profile),
