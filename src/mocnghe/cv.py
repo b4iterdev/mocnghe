@@ -9,7 +9,6 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .models.job import Job
-from .models.profile import CandidateProfile
 from .storage.repository import CareerRepository
 
 
@@ -93,6 +92,7 @@ class CVService:
     content_hash = staticmethod(digest)
 
     def _render_cv_markdown(self, cv: CV) -> str:
+        display_name = cv.identity.get("name") or cv.identity.get("full_name") or "Curriculum Vitae"
         lines = [
             "---",
             f"id: {cv.id}",
@@ -102,7 +102,7 @@ class CVService:
             f"provenance: {cv.provenance}",
             "---",
             "",
-            "# Curriculum Vitae",
+            f"# {display_name}",
             "",
         ]
         if cv.identity:

@@ -5,7 +5,6 @@ from typing import Literal
 from uuid import uuid4
 
 import yaml
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from .cv import digest
@@ -81,7 +80,7 @@ class ApplicationDraftService:
              "Kind regards,")
         )
         body = "\n\n".join([greeting, intro, *[c.text for c in cv.claims], closing,
-                              cv.identity.get("name", "")]).rstrip()
+                              cv.identity.get("name") or cv.identity.get("full_name") or ""]).rstrip()
         draft = ApplicationDraft(id=uuid4().hex, cv_id=cv.id, cv_hash=digest(cv),
                                  profile_version=cv.profile_version, profile_hash=cv.profile_hash,
                                  job_id=job_id, job_hash=digest(job), language=cv.language,

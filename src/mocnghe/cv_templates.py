@@ -23,11 +23,11 @@ def _format_contact(key: str, val: str) -> str:
 
 
 def _render_classic_html(cv: Any) -> str:
-    name = escape(cv.identity.get("name", "Curriculum Vitae"))
+    name = escape(cv.identity.get("name") or cv.identity.get("full_name") or "Curriculum Vitae")
     contacts = [
         _format_contact(k, v)
         for k, v in cv.identity.items()
-        if k != "name" and v and v.strip()
+        if k not in {"name", "full_name"} and v and v.strip()
     ]
     contact_bar = " &bull; ".join(contacts)
 
@@ -177,11 +177,11 @@ def _render_classic_html(cv: Any) -> str:
 
 
 def _render_minimal_html(cv: Any) -> str:
-    name = escape(cv.identity.get("name", "Curriculum Vitae"))
+    name = escape(cv.identity.get("name") or cv.identity.get("full_name") or "Curriculum Vitae")
     contacts = [
         _format_contact(k, v)
         for k, v in cv.identity.items()
-        if k != "name" and v and v.strip()
+        if k not in {"name", "full_name"} and v and v.strip()
     ]
     contact_bar = " / ".join(contacts)
 
@@ -278,7 +278,7 @@ def _render_minimal_html(cv: Any) -> str:
 def render_template_html(cv: Any, template_name: str = "modern", custom_path: Path | None = None) -> str:
     if custom_path is not None and custom_path.exists():
         raw_tmpl = custom_path.read_text(encoding="utf-8")
-        name = escape(cv.identity.get("name", ""))
+        name = escape(cv.identity.get("name") or cv.identity.get("full_name") or "")
         skills = ", ".join([c.text for c in getattr(cv, "claims", []) if c.section == "skills"])
         rendered = raw_tmpl.replace("{{ name }}", name).replace("{{ skills }}", skills)
         return rendered

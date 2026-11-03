@@ -44,6 +44,8 @@ mocnghe --workspace data init
   curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o .agents/skills/mocnghe/SKILL.md
   ```
 
+**QUAN TRỌNG DÀNH CHO AGENT:** Ngay sau khi tải skill về máy, bạn (AI Agent) **BẮT BUỘC PHẢI ĐỌC** toàn bộ nội dung tệp `SKILL.md` (hoặc `.cursor/rules/mocnghe.md`) vào ngữ cảnh phiên làm việc để nắm rõ toàn bộ cú pháp lệnh CLI (`mocnghe jobs crawl`, `mocnghe evaluate`, `mocnghe cv create`, `mocnghe cv approve`, `mocnghe cv export`) trước khi thực hiện các yêu cầu tiếp theo, tránh đoán mò subcommand và flags.
+
 ### BƯỚC 4: Thiết lập Hồ sơ Ứng viên (Profile Onboarding)
 1. Hỏi người dùng: **"Bạn đã có sẵn file CV (PDF hoặc văn bản) chưa?"**
 2. **Trường hợp 1 (Đã có CV):** Yêu cầu người dùng cung cấp đường dẫn hoặc gửi file CV. Đọc tệp và tự động trích xuất các thông tin:

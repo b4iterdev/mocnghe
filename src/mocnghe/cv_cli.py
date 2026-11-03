@@ -57,8 +57,14 @@ def create(ctx: typer.Context, profile_version: Annotated[str, typer.Option()],
            language: Annotated[str, typer.Option(help="en or vi; source wording is not auto-translated")],
            job_id: Annotated[str | None, typer.Option()] = None,
            identity: Annotated[list[str] | None, typer.Option(help="Explicit local identity fields")] = None):
-    emit(service(ctx).create(profile_version, evidence, language=language, job_id=job_id,
-                             identity_keys=identity or []))
+    srv = service(ctx)
+    if identity is not None:
+        id_keys = identity
+    else:
+        prof = srv._profile(profile_version)
+        id_keys = list(prof.identity.keys()) if prof and prof.identity else []
+    emit(srv.create(profile_version, evidence, language=language, job_id=job_id,
+                    identity_keys=id_keys))
 
 
 @cv_app.command("review")

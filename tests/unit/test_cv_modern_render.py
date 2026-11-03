@@ -37,3 +37,28 @@ def test_render_modern_html_and_pdf(repo, tmp_path):
     assert (target / "cv.pdf").exists()
     assert (target / "cv.html").exists()
     assert (target / "cv.json").exists()
+
+
+def test_render_modern_html_with_full_name(repo):
+    from datetime import UTC, datetime
+
+    from mocnghe.models.profile import CandidateEvidence, CandidateProfile, EvidenceStatus
+    repo.save_confirmed_profile(CandidateProfile(
+        profile_id="synthetic2", version="v2", confirmed_at=datetime.now(UTC),
+        identity={"full_name": "Nguyen Minh Thai", "email": "thai@example.com"},
+        evidence=[CandidateEvidence(evidence_id="ev2", status=EvidenceStatus.CANDIDATE_CONFIRMED,
+            summary="Built systems in C++.", source="synthetic",
+            provenance="experience", uncertainty="low")],
+    ))
+    s = CVService(repo)
+    cv = s.create(
+        "v2",
+        ["ev2"],
+        language="en",
+        identity_keys=["full_name", "email"],
+    )
+    html = render_modern_html(cv)
+    assert "Nguyen Minh Thai" in html
+    assert "Curriculum Vitae" not in html
+    assert "thai@example.com" in html
+

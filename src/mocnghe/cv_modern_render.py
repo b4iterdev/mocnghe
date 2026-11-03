@@ -172,11 +172,11 @@ def _format_contact_item(key: str, value: str) -> str:
 
 def render_modern_html(cv: Any) -> str:
     """Generate clean semantic HTML matching career-ops template."""
-    name = escape(cv.identity.get("name", "Curriculum Vitae"))
+    name = escape(cv.identity.get("name") or cv.identity.get("full_name") or "Curriculum Vitae")
     contacts = [
         _format_contact_item(k, v)
         for k, v in cv.identity.items()
-        if k != "name" and v and v.strip()
+        if k not in {"name", "full_name"} and v and v.strip()
     ]
     contact_html = ' <span class="separator">|</span> '.join(contacts)
 

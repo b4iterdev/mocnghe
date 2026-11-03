@@ -66,8 +66,8 @@ def render_pdf(cv, max_pages=2):
     labels = LABELS[cv.language]
     def p(text, style=body):
         return Paragraph(escape(text).replace("\n", "<br/>"), style)
-    story: list[Any] = [p(cv.identity.get("name", labels["title"]), title)]
-    contacts = [v for k, v in cv.identity.items() if k != "name" and v.strip()]
+    story: list[Any] = [p(cv.identity.get("name") or cv.identity.get("full_name") or labels["title"], title)]
+    contacts = [v for k, v in cv.identity.items() if k not in {"name", "full_name"} and v.strip()]
     if contacts:
         story.append(p(" | ".join(contacts), contact_style))
     story.append(Spacer(1, 4))
