@@ -75,10 +75,9 @@ Khởi tạo và tinh chỉnh bản CV xuất bản định dạng PDF:
    uv run mocnghe [--workspace <path>] cv list
    uv run mocnghe [--workspace <path>] cv review <cv_id>
    ```
-2. Tạo bản CV ban đầu gắn với các evidence IDs:
+2. Tạo bản CV ban đầu gắn với các evidence IDs (nếu không truyền `--identity`, CLI tự động lấy toàn bộ thông tin liên hệ từ hồ sơ):
    ```bash
    uv run mocnghe [--workspace <path>] cv create --profile-version <ver> --language <en|vi> --job-id <job_id> \
-     --identity name --identity email --identity linkedin --identity github --identity location \
      --evidence <ev_id_1> --evidence <ev_id_2> ...
    ```
 3. Xem xét mã băm SHA-256 và duyệt nội dung:
@@ -88,9 +87,9 @@ Khởi tạo và tinh chỉnh bản CV xuất bản định dạng PDF:
    ```
 4. Xuất gói hồ sơ CV (thư mục chứa `cv.pdf`, `cv.html`, `cv.json`):
    ```bash
-   uv run mocnghe [--workspace <path>] cv export <cv_id> --output <output_dir> [--engine modern|reportlab] [--max-pages 2]
+   uv run mocnghe [--workspace <path>] cv export <cv_id> --output <output_dir> [--template modern|classic|minimal] [--max-pages 2]
    ```
-   * *Ghi chú:* `--engine modern` (mặc định) sử dụng Playwright HTML/CSS với gradient header và badge tags theo phong cách career-ops. `--engine reportlab` là engine thuần Python dựng bằng canvas.
+   * *Ghi chú:* `--template modern` (mặc định) sử dụng Playwright HTML/CSS chuẩn career-ops (Professional Summary, Core Competencies pills, Experience có tên công ty/chức danh/ngày tháng/bullet, Projects có tech stack, Education/Certifications tách bảng chuẩn 1 trang A4). `--template classic` và `--template minimal` là các mẫu thay thế. `--engine reportlab` là engine thuần Python dự phòng khi không có trình duyệt.
 
 ### 7. `/mocnghe-visual-test <cv_id>` hoặc `/visual-test <cv_id>`
 Kiểm thử hồi quy trực quan cho file PDF tránh vỡ layout hoặc tràn trang:
