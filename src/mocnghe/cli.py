@@ -263,6 +263,65 @@ def jobs_batch_crawl(
         typer.echo(f"Summary written to: {output}")
 
 
+@jobs_app.command("discover")
+def jobs_discover(
+    ctx: typer.Context,
+    keyword: Annotated[str, typer.Option("--keyword", "-k", help="Job title or technology keyword")] = "",
+    location: Annotated[str | None, typer.Option("--location", "-l", help="Target city / province / country")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Maximum jobs to discover")] = 5,
+    crawl: Annotated[bool, typer.Option("--crawl/--no-crawl", help="Auto-crawl and import discovered jobs into workspace")] = True,
+    browser: Annotated[bool, typer.Option("--browser", help="Enable Playwright browser for crawling")] = False,
+    triage: Annotated[bool, typer.Option("--triage/--no-triage", help="Run constraint triage against profile for crawled jobs")] = False,
+) -> None:
+    """Discover jobs from the public web and optionally crawl and triage them."""
+    if not keyword:
+        typer.echo("Error: --keyword / -k is required.", err=True)
+        raise typer.Exit(1)
+
+    repository = repository_from_context(ctx)
+    repository.initialize()
+
+    from .ingestion.web_discovery import search_public_jobs
+
+    typer.echo(f"Searching public web for: '{keyword}'" + (f" in {location}" if location else "") + "...")
+    links = search_public_jobs(keyword, location=location, limit=limit)
+    if not links:
+        typer.echo("No matching job postings found on the public web.")
+        return
+
+    typer.echo(f"Found {len(links)} candidate job URLs:")
+    for idx, item in enumerate(links, start=1):
+        typer.echo(f"  {idx}. [{item.source_domain}] {item.title}")
+        typer.echo(f"     URL: {item.url}")
+
+    if not crawl:
+        return
+
+    typer.echo("\nCrawling discovered jobs into workspace...")
+    from .ingestion.batch_scanner import run_batch_crawl
+
+    urls = [it.url for it in links]
+    report = run_batch_crawl(repository, urls, use_browser=browser, delay_seconds=0.5)
+    typer.echo(f"Crawl summary: {report.imported} imported, {report.existing} existing, {report.failed} failed.")
+
+    if triage:
+        profile = repository.get_profile_version("1.0")
+        if profile is None:
+            typer.echo("Profile not confirmed yet (version 1.0); skipping triage pass.")
+            return
+
+        from .triage import triage_job
+
+        typer.echo("\nRunning triage for imported jobs:")
+        for item in report.items:
+            if item.status in {"imported", "existing"} and item.job_id:
+                job = repository.get_job(item.job_id)
+                if job:
+                    res = triage_job(profile, job)
+                    typer.echo(f"  • {item.job_id} ({job.title}): {res.verdict}")
+
+
+
 @portals_app.command("validate")
 def portals_validate(
     ctx: typer.Context,
