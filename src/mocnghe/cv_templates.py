@@ -275,7 +275,7 @@ def _render_minimal_html(cv: Any) -> str:
 </html>"""
 
 
-def render_template_html(cv: Any, template_name: str = "modern", custom_path: Path | None = None) -> str:
+def render_template_html(cv: Any, template_name: str = "modern", custom_path: Path | None = None, profile: Any = None) -> str:
     if custom_path is not None and custom_path.exists():
         raw_tmpl = custom_path.read_text(encoding="utf-8")
         name = escape(cv.identity.get("name") or cv.identity.get("full_name") or "")
@@ -288,4 +288,4 @@ def render_template_html(cv: Any, template_name: str = "modern", custom_path: Pa
         return _render_classic_html(cv)
     if normalized == "minimal":
         return _render_minimal_html(cv)
-    return render_modern_html(cv)
+    return render_modern_html(cv, profile=profile)
