@@ -27,22 +27,70 @@ mkdir -p ~/mocnghe-workspace && cd ~/mocnghe-workspace
 mocnghe --workspace data init
 ```
 
-### BƯỚC 3: Cài đặt Skill cho Agent (Tùy nền tảng)
-- **Nếu đang chạy trên Hermes Agent:** Tải skill vào `~/.hermes/skills/productivity/mocnghe/SKILL.md`:
-  ```bash
-  mkdir -p ~/.hermes/skills/productivity/mocnghe
-  curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o ~/.hermes/skills/productivity/mocnghe/SKILL.md
-  ```
-- **Nếu đang chạy trên Cursor / Windsurf:** Tải quy tắc vào `.cursor/rules/mocnghe.md`:
-  ```bash
-  mkdir -p .cursor/rules
-  curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.cursor/rules/mocnghe.md -o .cursor/rules/mocnghe.md
-  ```
-- **Nếu đang chạy trên Claude Code / OpenCode / Codex:** Tải skill vào `.agents/skills/mocnghe/SKILL.md`:
-  ```bash
-  mkdir -p .agents/skills/mocnghe
-  curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o .agents/skills/mocnghe/SKILL.md
-  ```
+### BƯỚC 3: Cài đặt Skill & Slash Command cho Agent (Tùy nền tảng)
+
+#### 1. Nếu đang chạy trên Hermes Agent:
+Tải skill vào thư mục skills của Hermes:
+```bash
+mkdir -p ~/.hermes/skills/productivity/mocnghe
+curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o ~/.hermes/skills/productivity/mocnghe/SKILL.md
+```
+
+#### 2. Nếu đang chạy trên OpenCode:
+Tải skill và tạo slash command `/mocnghe`:
+```bash
+# Cài đặt Skill
+mkdir -p ~/.config/opencode/skills/mocnghe
+curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o ~/.config/opencode/skills/mocnghe/SKILL.md
+
+# Tạo Slash Command /mocnghe toàn cục
+mkdir -p ~/.config/opencode/commands
+cat << 'EOF' > ~/.config/opencode/commands/mocnghe.md
+---
+description: "Vận hành tìm việc, crawl JD, đánh giá độ phù hợp và tạo CV với Mốc Nghề"
+---
+Thực hiện yêu cầu vận hành Mốc Nghề (mocnghe) theo chỉ dẫn chi tiết:
+1. Đọc kỹ file hướng dẫn: ~/.config/opencode/skills/mocnghe/SKILL.md.
+2. Luôn làm việc trong thư mục workspace: ~/mocnghe-workspace (data/).
+3. Thực thi tác vụ được yêu cầu qua mocnghe CLI:
+$ARGUMENTS
+EOF
+```
+
+#### 3. Nếu đang chạy trên Claude Code:
+Tải skill và slash command cho Claude Code:
+```bash
+# Cài đặt Skill (hỗ trợ tự động kích hoạt và lệnh /mocnghe)
+mkdir -p ~/.claude/skills/mocnghe
+curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o ~/.claude/skills/mocnghe/SKILL.md
+
+# Tạo command dự phòng
+mkdir -p ~/.claude/commands
+cat << 'EOF' > ~/.claude/commands/mocnghe.md
+---
+description: "Vận hành tìm việc, crawl JD, đánh giá độ phù hợp và tạo CV với Mốc Nghề"
+---
+Thực hiện yêu cầu vận hành Mốc Nghề (mocnghe) theo chỉ dẫn chi tiết:
+1. Đọc kỹ file hướng dẫn: ~/.claude/skills/mocnghe/SKILL.md.
+2. Luôn làm việc trong thư mục workspace: ~/mocnghe-workspace (data/).
+3. Thực thi tác vụ được yêu cầu qua mocnghe CLI:
+$ARGUMENTS
+EOF
+```
+
+#### 4. Nếu đang chạy trên Cursor / Windsurf:
+Tải quy tắc vào `.cursor/rules/mocnghe.md`:
+```bash
+mkdir -p .cursor/rules
+curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.cursor/rules/mocnghe.md -o .cursor/rules/mocnghe.md
+```
+
+#### 5. Nếu đang chạy trên Codex / agents khác:
+Tải skill vào `.agents/skills/mocnghe/SKILL.md`:
+```bash
+mkdir -p .agents/skills/mocnghe
+curl -fsSL https://raw.githubusercontent.com/b4iterdev/mocnghe/main/.agents/skills/mocnghe/SKILL.md -o .agents/skills/mocnghe/SKILL.md
+```
 
 **QUAN TRỌNG DÀNH CHO AGENT:** Ngay sau khi tải skill về máy, bạn (AI Agent) **BẮT BUỘC PHẢI ĐỌC** toàn bộ nội dung tệp `SKILL.md` (hoặc `.cursor/rules/mocnghe.md`) vào ngữ cảnh phiên làm việc để nắm rõ toàn bộ cú pháp lệnh CLI (`mocnghe jobs crawl`, `mocnghe evaluate`, `mocnghe cv create`, `mocnghe cv approve`, `mocnghe cv export`) trước khi thực hiện các yêu cầu tiếp theo, tránh đoán mò subcommand và flags.
 
