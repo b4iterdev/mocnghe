@@ -2,7 +2,7 @@
 name: mocnghe
 description: "Sử dụng khi vận hành tìm việc, tạo CV, đánh giá và theo dõi ứng tuyển với Mốc Nghề CLI."
 version: 1.1.0
-author: Thai & Hermes
+author: Nguyen Minh Thai & Nguyen Tuan Anh & Le Ngoc Dang
 metadata:
   hermes:
     tags: [career, mocnghe, jobs, cv, ats, tracking, cover-letter]

@@ -220,6 +220,6 @@ uv run ruff check .
 
 ---
 
-## 📄 Bản Quyền & Giấy Phép
+## 📄 Tác Giả & Bản Quyền (Credits)
 
-Phát triển bởi **Thai & Hermes**. Mã nguồn được phát hành theo giấy phép mã nguồn mở MIT.
+Phát triển bởi **Nguyen Minh Thai & Nguyen Tuan Anh & Le Ngoc Dang**. Mã nguồn được phát hành theo giấy phép mã nguồn mở MIT.
